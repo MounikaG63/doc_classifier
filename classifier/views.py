@@ -34,7 +34,7 @@ def get_resources():
         import sys
         try:
             print("Attempting to initialize PaddleOCR...", file=sys.stderr)
-            paddle_ocr = PaddleOCR(use_angle_cls=True, lang='en')
+            paddle_ocr = PaddleOCR(lang='en')
             print("✓ PaddleOCR initialized successfully", file=sys.stderr)
         except Exception as e:
             import traceback
@@ -100,22 +100,42 @@ def extract_text_from_pdf_direct(path):
 
 def extract_text_paddleocr(path, paddle_ocr):
     try:
+        if paddle_ocr is None:
+            return "ERROR: PaddleOCR not initialized"
         if path.lower().endswith(".pdf"):
             direct_text = extract_text_from_pdf_direct(path)
             if direct_text and len(direct_text) > 50:
                 return direct_text
-        result = paddle_ocr.predict(path)
+            pages = pdf_to_images(path)
+            full_text = ""
+            for img in pages:
+                preprocess_image(img)
+                result = paddle_ocr.ocr(img)
+                if result:
+                    for line in result:
+                        if line:
+                            for word_info in line:
+                                if word_info and len(word_info) > 1:
+                                    full_text += " " + word_info[1]
+                os.remove(img)
+            return full_text.strip() if full_text.strip() else "ERROR: No text extracted from PDF"
+        
+        preprocess_image(path)
+        result = paddle_ocr.ocr(path)
         if not result:
             return "ERROR: PaddleOCR returned empty result"
+        
         all_texts = []
-        for page_result in result:
-            if hasattr(page_result, 'rec_texts'):
-                all_texts.extend(page_result.rec_texts)
-            elif isinstance(page_result, dict) and 'rec_texts' in page_result:
-                all_texts.extend(page_result['rec_texts'])
+        for line in result:
+            if line:
+                for word_info in line:
+                    if word_info and len(word_info) > 1:
+                        all_texts.append(word_info[1])
+        
         return " ".join(all_texts) if all_texts else "ERROR: No text extracted"
     except Exception as e:
-        return f"ERROR: {str(e)}"
+        import traceback
+        return f"ERROR: {str(e)} | {traceback.format_exc()[:200]}"
 
 
 def extract_text_tesseract(path):
@@ -251,7 +271,7 @@ def classify_document(request):
         return JsonResponse({'error': 'Invalid OCR engine'}, status=400)
     
     processing_time = time.time() - start_time
-    results = {}
+    results = {"ocr_engine": engine_name, "extracted_text_length": len(extracted_text)}
     
     if extracted_text.strip() and not extracted_text.startswith("ERROR"):
         text_vec = embedder.encode([extracted_text])[0].tolist()
@@ -262,47 +282,56 @@ def classify_document(request):
                 dist = query_res["distances"][0][0]
                 similarity_score = round((1 - dist) * 100, 2)
                 if similarity_score < 0:
-                    results = {
-                        "ocr_engine": engine_name, "document_type": "Miscellaneous",
-                        "similarity_score": similarity_score, "ocr_text": extracted_text[:1000],
-                        "processing_time": round(processing_time, 2), "text_length": len(extracted_text),
+                    results.update({
+                        "document_type": "Miscellaneous",
+                        "similarity_score": similarity_score, 
+                        "ocr_text": extracted_text[:1000],
+                        "processing_time": round(processing_time, 2), 
+                        "text_length": len(extracted_text),
                         "reason": "No matching document type found (low similarity)"
-                    }
+                    })
                 else:
-                    results = {
-                        "ocr_engine": engine_name, "document_type": top["label"],
-                        "similarity_score": similarity_score, "ocr_text": extracted_text[:1000],
-                        "processing_time": round(processing_time, 2), "text_length": len(extracted_text),
+                    results.update({
+                        "document_type": top["label"],
+                        "similarity_score": similarity_score, 
+                        "ocr_text": extracted_text[:1000],
+                        "processing_time": round(processing_time, 2), 
+                        "text_length": len(extracted_text),
                         "top_3_matches": [
                             {"type": query_res["metadatas"][0][i]["label"],
                              "score": round((1 - query_res["distances"][0][i]) * 100, 2)}
                             for i in range(min(3, len(query_res["metadatas"][0])))
                         ]
-                    }
+                    })
             else:
-                results = {"ocr_engine": engine_name, "document_type": "unknown", "reason": "no_match"}
+                results.update({"document_type": "unknown", "reason": "no_match"})
         except Exception as e:
-            results = {"ocr_engine": engine_name, "document_type": "unknown", "reason": f"query_error: {str(e)}"}
+            results.update({"document_type": "unknown", "reason": f"query_error: {str(e)}"})
     else:
         try:
             from .gemini_classifier import classify_with_gemini
             gemini_result = classify_with_gemini(temp_path)
             if "error" not in gemini_result:
-                results = {
+                results.update({
                     "ocr_engine": f"{engine_name} + Gemini (fallback)",
                     "document_type": gemini_result.get("doc_type", "unknown"),
                     "category": gemini_result.get("category", ""),
                     "sub_category": gemini_result.get("sub_category", ""),
                     "confidence": gemini_result.get("confidence", ""),
                     "processing_time": round(processing_time, 2),
-                    "gemini_used": True, "reason": "OCR failed, classified using Gemini Vision"
-                }
+                    "gemini_used": True, 
+                    "reason": "OCR failed, classified using Gemini Vision"
+                })
             else:
-                results = {"ocr_engine": engine_name, "document_type": "unknown",
-                           "reason": f"ocr_failed and gemini_error: {gemini_result.get('error', 'Unknown')}"}
+                results.update({
+                    "document_type": "unknown",
+                    "reason": f"ocr_failed and gemini_error: {gemini_result.get('error', 'Unknown')}"
+                })
         except Exception as e:
-            results = {"ocr_engine": engine_name, "document_type": "unknown",
-                       "reason": f"ocr_failed: {extracted_text[:100]}, gemini_error: {str(e)}"}
+            results.update({
+                "document_type": "unknown",
+                "reason": f"ocr_failed: {extracted_text[:100]}, gemini_error: {str(e)}"
+            })
     
     os.remove(temp_path)
     return JsonResponse(results)
