@@ -449,34 +449,71 @@ function formatOcrResult(result) {
             html += `<p style="color: #666; font-size: 0.9em; margin-top: 10px; background: #f5f5f5; padding: 10px; border-radius: 5px;">ℹ️ ${result.reason}</p>`;
         }
     } else {
-        // Standard OCR result display
+        // Standard OCR result display with hybrid classification
         html += `
             <div class="metrics-row">
                 <div class="metric-box">
-                    <div class="metric-label">Similarity</div>
-                    <div class="metric-value">${result.similarity_score || 0}%</div>
+                    <div class="metric-label">Confidence</div>
+                    <div class="metric-value">${result.confidence || 0}%</div>
+                </div>
+                <div class="metric-box">
+                    <div class="metric-label">Method</div>
+                    <div class="metric-value" style="font-size: 0.9em; text-transform: capitalize;">${result.classification_method || 'vector'}</div>
                 </div>
                 <div class="metric-box">
                     <div class="metric-label">Time</div>
                     <div class="metric-value">${result.processing_time || 0}s</div>
                 </div>
-                <div class="metric-box">
-                    <div class="metric-label">Text Length</div>
-                    <div class="metric-value">${result.text_length || 0}</div>
-                </div>
             </div>
         `;
         
-        if (result.top_3_matches) {
-            html += '<div class="top-matches"><strong>Top 3 Matches:</strong>';
+        // Show classification details
+        if (result.details) {
+            html += `<div style="background: #f0f4ff; padding: 12px; border-radius: 6px; margin: 15px 0; border-left: 4px solid #667eea;">
+                        <strong>Classification Details:</strong> ${result.details}
+                    </div>`;
+        }
+        
+        // Top 3 Matches with Vector and Keyword Scores
+        if (result.top_3_matches && result.top_3_matches.length > 0) {
+            html += `<div style="margin-top: 20px;">
+                        <strong style="display: block; margin-bottom: 12px; font-size: 1.05em;">📊 Top 3 Matches:</strong>
+                        <div style="display: grid; gap: 12px;">`;
+            
             result.top_3_matches.forEach((match, i) => {
-                html += `<div class="match-item">${i+1}. ${match.type}: ${match.score}%</div>`;
+                const isSelected = match.type === result.document_type;
+                const methodBg = result.classification_method === 'keyword' ? '#e8f5e9' : '#e3f2fd';
+                const methodColor = result.classification_method === 'keyword' ? '#2e7d32' : '#1565c0';
+                
+                html += `
+                    <div style="background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px; ${isSelected ? 'border: 2px solid #667eea; background: #f8f9ff;' : ''}">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <span style="font-weight: 600; font-size: 1.05em;">#${match.rank} ${match.type}</span>
+                            ${isSelected ? '<span style="background: #667eea; color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.8em; font-weight: 600;">SELECTED</span>' : ''}
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                            <div style="background: #e3f2fd; padding: 10px; border-radius: 6px;">
+                                <div style="font-size: 0.85em; color: #666; margin-bottom: 4px;">Vector Score</div>
+                                <div style="font-size: 1.3em; font-weight: 700; color: #1565c0;">${match.vector_score}%</div>
+                            </div>
+                            <div style="background: #f3e5f5; padding: 10px; border-radius: 6px;">
+                                <div style="font-size: 0.85em; color: #666; margin-bottom: 4px;">Keyword Score</div>
+                                <div style="font-size: 1.3em; font-weight: 700; color: #6a1b9a;">${match.keyword_score}%</div>
+                            </div>
+                        </div>
+                        <div style="background: #f5f5f5; padding: 8px; border-radius: 6px; margin-top: 8px; text-align: center;">
+                            <div style="font-size: 0.85em; color: #666;">Combined Score</div>
+                            <div style="font-size: 1.2em; font-weight: 700; color: #333;">${match.combined_score}%</div>
+                        </div>
+                    </div>
+                `;
             });
-            html += '</div>';
+            
+            html += `</div></div>`;
         }
         
         if (result.ocr_text) {
-            html += '<div class="ocr-section"><strong>OCR Text Preview:</strong>';
+            html += '<div class="ocr-section" style="margin-top: 20px;"><strong>OCR Text Preview:</strong>';
             html += `<div class="ocr-text">${result.ocr_text}</div></div>`;
         }
     }

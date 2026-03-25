@@ -13,8 +13,9 @@ import time
 import zipfile
 import tempfile
 import shutil
+# Removed hybrid classifier - using simple vector similarity
 
-DB_PATH = "ocr_text_db"
+DB_PATH = "db"
 SAMPLES_PATH = "samples"
 
 chroma_client = None
@@ -216,6 +217,7 @@ def index(request):
 
 
 @csrf_exempt
+@csrf_exempt
 def classify_document(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=400)
@@ -256,33 +258,50 @@ def classify_document(request):
     if extracted_text.strip() and not extracted_text.startswith("ERROR"):
         text_vec = embedder.encode([extracted_text])[0].tolist()
         try:
-            query_res = collection.query(query_embeddings=[text_vec], n_results=3)
+            # Simple vector similarity search
+            query_res = collection.query(query_embeddings=[text_vec], n_results=5)
+            
             if query_res["metadatas"] and query_res["metadatas"][0]:
-                top = query_res["metadatas"][0][0]
-                dist = query_res["distances"][0][0]
-                similarity_score = round((1 - dist) * 100, 2)
-                if similarity_score < 0:
-                    results = {
-                        "ocr_engine": engine_name, "document_type": "Miscellaneous",
-                        "similarity_score": similarity_score, "ocr_text": extracted_text[:1000],
-                        "processing_time": round(processing_time, 2), "text_length": len(extracted_text),
-                        "reason": "No matching document type found (low similarity)"
-                    }
-                else:
-                    results = {
-                        "ocr_engine": engine_name, "document_type": top["label"],
-                        "similarity_score": similarity_score, "ocr_text": extracted_text[:1000],
-                        "processing_time": round(processing_time, 2), "text_length": len(extracted_text),
-                        "top_3_matches": [
-                            {"type": query_res["metadatas"][0][i]["label"],
-                             "score": round((1 - query_res["distances"][0][i]) * 100, 2)}
-                            for i in range(min(3, len(query_res["metadatas"][0])))
-                        ]
-                    }
+                # Get the best match (highest similarity)
+                best_match = query_res["metadatas"][0][0]
+                best_distance = query_res["distances"][0][0]
+                confidence = (1 - best_distance) * 100  # Convert distance to confidence percentage
+                
+                # Prepare top 3 matches for display
+                top_3_matches = []
+                for i in range(min(3, len(query_res["metadatas"][0]))):
+                    doc_type = query_res["metadatas"][0][i]["label"]
+                    vector_score = (1 - query_res["distances"][0][i]) * 100
+                    
+                    top_3_matches.append({
+                        "rank": i + 1,
+                        "type": doc_type,
+                        "vector_score": round(vector_score, 2),
+                        "confidence": round(vector_score, 2)
+                    })
+                
+                # Prepare response
+                results = {
+                    "ocr_engine": engine_name,
+                    "document_type": best_match["label"],
+                    "confidence": round(confidence, 2),
+                    "classification_method": "vector_similarity",
+                    "ocr_text": extracted_text[:1000],
+                    "processing_time": round(processing_time, 2),
+                    "top_3_matches": top_3_matches
+                }
             else:
-                results = {"ocr_engine": engine_name, "document_type": "unknown", "reason": "no_match"}
+                results = {
+                    "ocr_engine": engine_name,
+                    "document_type": "unknown",
+                    "reason": "no_match_in_database"
+                }
         except Exception as e:
-            results = {"ocr_engine": engine_name, "document_type": "unknown", "reason": f"query_error: {str(e)}"}
+            results = {
+                "ocr_engine": engine_name,
+                "document_type": "unknown",
+                "reason": f"vector_search_error: {str(e)}"
+            }
     else:
         try:
             from .gemini_classifier import classify_with_gemini
@@ -295,14 +314,21 @@ def classify_document(request):
                     "sub_category": gemini_result.get("sub_category", ""),
                     "confidence": gemini_result.get("confidence", ""),
                     "processing_time": round(processing_time, 2),
-                    "gemini_used": True, "reason": "OCR failed, classified using Gemini Vision"
+                    "gemini_used": True,
+                    "reason": "OCR failed, classified using Gemini Vision"
                 }
             else:
-                results = {"ocr_engine": engine_name, "document_type": "unknown",
-                           "reason": f"ocr_failed and gemini_error: {gemini_result.get('error', 'Unknown')}"}
+                results = {
+                    "ocr_engine": engine_name,
+                    "document_type": "unknown",
+                    "reason": f"ocr_failed and gemini_error: {gemini_result.get('error', 'Unknown')}"
+                }
         except Exception as e:
-            results = {"ocr_engine": engine_name, "document_type": "unknown",
-                       "reason": f"ocr_failed: {extracted_text[:100]}, gemini_error: {str(e)}"}
+            results = {
+                "ocr_engine": engine_name,
+                "document_type": "unknown",
+                "reason": f"ocr_failed: {extracted_text[:100]}, gemini_error: {str(e)}"
+            }
     
     os.remove(temp_path)
     return JsonResponse(results)

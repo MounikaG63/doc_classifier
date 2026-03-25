@@ -13,6 +13,7 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.staticfiles',
     'classifier',
+    'weaviate_classifier',
 ]
 
 MIDDLEWARE = [

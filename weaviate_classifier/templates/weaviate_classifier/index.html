@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weaviate Document Classifier</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            padding: 40px;
+        }
+
+        .upload-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 2px dashed #dee2e6;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .upload-section:hover {
+            border-color: #4facfe;
+            background: #f0f8ff;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+
+        .file-input {
+            position: absolute;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+
+        .file-input-button {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 25px;
+            border: none;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-block;
+        }
+
+        .file-input-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(79, 172, 254, 0.3);
+        }
+
+        .ocr-selector {
+            margin: 20px 0;
+        }
+
+        .ocr-selector label {
+            font-weight: 600;
+            margin-right: 15px;
+            color: #333;
+        }
+
+        .ocr-selector select {
+            padding: 10px 15px;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 1em;
+            background: white;
+            cursor: pointer;
+        }
+
+        .classify-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 25px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 20px;
+        }
+
+        .classify-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .classify-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .results-section {
+            margin-top: 30px;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .result-card {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .document-type {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .confidence-badge {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+
+        .method-badge {
+            background: #28a745;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            margin-left: 10px;
+        }
+
+        .scores-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .score-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .score-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .score-value {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .top-matches {
+            margin-top: 20px;
+        }
+
+        .top-matches h4 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .match-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #4facfe;
+        }
+
+        .match-rank {
+            background: #4facfe;
+            color: white;
+            width: 25px;
+            height: 25px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.9em;
+        }
+
+        .match-type {
+            font-weight: 600;
+            color: #333;
+            flex-grow: 1;
+            margin-left: 15px;
+        }
+
+        .match-scores {
+            display: flex;
+            gap: 10px;
+            font-size: 0.9em;
+        }
+
+        .match-score {
+            background: #f8f9fa;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4facfe;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .database-section {
+            margin-top: 40px;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .database-section h3 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .db-actions {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .db-btn {
+            background: #6c757d;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .db-btn:hover {
+            background: #5a6268;
+            transform: translateY(-1px);
+        }
+
+        .db-stats {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        .health-status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.9em;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .health-healthy {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .health-unhealthy {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .main-content {
+                padding: 20px;
+            }
+            
+            .result-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+            
+            .scores-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1> Weaviate Document Classifier</h1>
+            <p>Advanced document classification using Weaviate vector database + hybrid keyword matching</p>
+        </div>
+
+        <div class="main-content">
+            <!-- Upload Section -->
+            <div class="upload-section">
+                <div class="file-input-wrapper">
+                    <input type="file" id="fileInput" class="file-input" accept=".jpg,.jpeg,.png,.pdf">
+                    <button class="file-input-button">📁 Choose Document</button>
+                </div>
+                <p id="fileName" style="margin-top: 10px; color: #666;"></p>
+                
+                <div class="ocr-selector">
+                    <label for="ocrEngine">OCR Engine:</label>
+                    <select id="ocrEngine">
+                        <option value="tesseract">Tesseract (Fast)</option>
+                        <option value="easyocr">EasyOCR (Balanced)</option>
+                        <option value="paddleocr" selected>PaddleOCR (Accurate)</option>
+                        <option value="surya">Surya (Advanced)</option>
+                    </select>
+                </div>
+                
+                <button id="classifyBtn" class="classify-btn" disabled> Classify Document</button>
+            </div>
+
+            <!-- Results Section -->
+            <div id="resultsSection" class="results-section">
+                <div id="loadingDiv" class="loading">
+                    <div class="spinner"></div>
+                    <p>Processing document...</p>
+                </div>
+                <div id="resultsDiv"></div>
+            </div>
+
+            <!-- Database Management Section -->
+            <div class="database-section">
+                <h3> Weaviate Database Management</h3>
+                <div class="db-actions">
+                    <button id="healthCheckBtn" class="db-btn"> Health Check</button>
+                    <button id="getStatsBtn" class="db-btn">Get Stats</button>
+                    <button id="rebuildBtn" class="db-btn">Rebuild Database</button>
+                    <button id="addFilesBtn" class="db-btn">Add New Files</button>
+                </div>
+                <div id="dbStats" class="db-stats" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const fileName = document.getElementById('fileName');
+        const classifyBtn = document.getElementById('classifyBtn');
+        const resultsSection = document.getElementById('resultsSection');
+        const loadingDiv = document.getElementById('loadingDiv');
+        const resultsDiv = document.getElementById('resultsDiv');
+        const ocrEngine = document.getElementById('ocrEngine');
+
+        // Database management elements
+        const healthCheckBtn = document.getElementById('healthCheckBtn');
+        const getStatsBtn = document.getElementById('getStatsBtn');
+        const rebuildBtn = document.getElementById('rebuildBtn');
+        const addFilesBtn = document.getElementById('addFilesBtn');
+        const dbStats = document.getElementById('dbStats');
+
+        fileInput.addEventListener('change', function(e) {
+            if (e.target.files.length > 0) {
+                fileName.textContent = `Selected: ${e.target.files[0].name}`;
+                classifyBtn.disabled = false;
+            } else {
+                fileName.textContent = '';
+                classifyBtn.disabled = true;
+            }
+        });
+
+        classifyBtn.addEventListener('click', async function() {
+            if (!fileInput.files[0]) return;
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('ocr_engine', ocrEngine.value);
+
+            resultsSection.style.display = 'block';
+            loadingDiv.style.display = 'block';
+            resultsDiv.style.display = 'none';
+            classifyBtn.disabled = true;
+
+            try {
+                const response = await fetch('/weaviate/classify/', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                displayResults(result);
+            } catch (error) {
+                displayError('Network error: ' + error.message);
+            } finally {
+                loadingDiv.style.display = 'none';
+                classifyBtn.disabled = false;
+            }
+        });
+
+        function displayResults(result) {
+            resultsDiv.style.display = 'block';
+            
+            if (result.error) {
+                resultsDiv.innerHTML = `<div class="error">Error: ${result.error}</div>`;
+                return;
+            }
+
+            let html = `
+                <div class="result-card">
+                    <div class="result-header">
+                        <div>
+                            <span class="document-type">${result.document_type}</span>
+                            <span class="method-badge">${result.classification_method || result.method || 'N/A'}</span>
+                        </div>
+                        <span class="confidence-badge">${result.confidence}% confidence</span>
+                    </div>
+            `;
+
+            // Add scores if available
+            if (result.vector_score !== undefined || result.keyword_score !== undefined) {
+                html += `
+                    <div class="scores-grid">
+                        <div class="score-item">
+                            <div class="score-label">Vector Score</div>
+                            <div class="score-value">${result.vector_score || 0}%</div>
+                        </div>
+                        <div class="score-item">
+                            <div class="score-label">Keyword Score</div>
+                            <div class="score-value">${result.keyword_score || 0}%</div>
+                        </div>
+                        <div class="score-item">
+                            <div class="score-label">Processing Time</div>
+                            <div class="score-value">${result.processing_time || 0}s</div>
+                        </div>
+                        <div class="score-item">
+                            <div class="score-label">OCR Engine</div>
+                            <div class="score-value">${result.ocr_engine}</div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Add details if available
+            if (result.details) {
+                html += `<p style="color: #666; margin-bottom: 15px;"><strong>Details:</strong> ${result.details}</p>`;
+            }
+
+            // Add top matches if available
+            if (result.top_3_matches && result.top_3_matches.length > 0) {
+                html += `
+                    <div class="top-matches">
+                        <h4>Top 3 Matches:</h4>
+                `;
+                
+                result.top_3_matches.forEach(match => {
+                    html += `
+                        <div class="match-item">
+                            <div class="match-rank">${match.rank}</div>
+                            <div class="match-type">${match.type}</div>
+                            <div class="match-scores">
+                                <span class="match-score">V: ${match.vector_score}%</span>
+                                <span class="match-score">K: ${match.keyword_score}%</span>
+                                <span class="match-score">C: ${match.combined_score}%</span>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += `</div>`;
+            }
+
+            html += `</div>`;
+            resultsDiv.innerHTML = html;
+        }
+
+        function displayError(message) {
+            resultsDiv.style.display = 'block';
+            resultsDiv.innerHTML = `<div class="error">${message}</div>`;
+        }
+
+        // Database management functions
+        healthCheckBtn.addEventListener('click', async function() {
+            try {
+                const response = await fetch('/weaviate/health/');
+                const result = await response.json();
+                
+                const statusClass = result.healthy ? 'health-healthy' : 'health-unhealthy';
+                const statusText = result.healthy ? '✅ Healthy' : '❌ Unhealthy';
+                
+                dbStats.innerHTML = `
+                    <h4>Health Status <span class="health-status ${statusClass}">${statusText}</span></h4>
+                    <p>${result.message}</p>
+                `;
+                dbStats.style.display = 'block';
+            } catch (error) {
+                dbStats.innerHTML = `<div class="error">Health check failed: ${error.message}</div>`;
+                dbStats.style.display = 'block';
+            }
+        });
+
+        getStatsBtn.addEventListener('click', async function() {
+            try {
+                const response = await fetch('/weaviate/stats/');
+                const result = await response.json();
+                
+                if (result.error) {
+                    dbStats.innerHTML = `<div class="error">${result.error}</div>`;
+                } else {
+                    let html = `
+                        <h4>Database Statistics</h4>
+                        <p><strong>Total Documents:</strong> ${result.total}</p>
+                    `;
+                    
+                    if (result.by_type && Object.keys(result.by_type).length > 0) {
+                        html += '<h5>Documents by Type:</h5><ul>';
+                        for (const [type, count] of Object.entries(result.by_type)) {
+                            html += `<li>${type}: ${count}</li>`;
+                        }
+                        html += '</ul>';
+                    }
+                    
+                    dbStats.innerHTML = html;
+                }
+                dbStats.style.display = 'block';
+            } catch (error) {
+                dbStats.innerHTML = `<div class="error">Failed to get stats: ${error.message}</div>`;
+                dbStats.style.display = 'block';
+            }
+        });
+
+        rebuildBtn.addEventListener('click', async function() {
+            if (!confirm('This will rebuild the entire database. Continue?')) return;
+            
+            rebuildBtn.disabled = true;
+            rebuildBtn.textContent = '🔄 Rebuilding...';
+            
+            try {
+                const response = await fetch('/weaviate/rebuild/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        ocr_engine: ocrEngine.value
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    dbStats.innerHTML = `
+                        <h4>✅ Database Rebuilt Successfully</h4>
+                        <p>Added ${result.added} documents out of ${result.total} processed</p>
+                    `;
+                } else {
+                    dbStats.innerHTML = `<div class="error">Rebuild failed: ${result.error}</div>`;
+                }
+                dbStats.style.display = 'block';
+            } catch (error) {
+                dbStats.innerHTML = `<div class="error">Rebuild failed: ${error.message}</div>`;
+                dbStats.style.display = 'block';
+            } finally {
+                rebuildBtn.disabled = false;
+                rebuildBtn.textContent = '🔄 Rebuild Database';
+            }
+        });
+
+        addFilesBtn.addEventListener('click', async function() {
+            addFilesBtn.disabled = true;
+            addFilesBtn.textContent = '➕ Adding...';
+            
+            try {
+                const response = await fetch('/weaviate/add-files/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        ocr_engine: ocrEngine.value
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    dbStats.innerHTML = `
+                        <h4>✅ Files Added Successfully</h4>
+                        <p>Added ${result.added} new documents</p>
+                    `;
+                } else {
+                    dbStats.innerHTML = `<div class="error">Add files failed: ${result.error}</div>`;
+                }
+                dbStats.style.display = 'block';
+            } catch (error) {
+                dbStats.innerHTML = `<div class="error">Add files failed: ${error.message}</div>`;
+                dbStats.style.display = 'block';
+            } finally {
+                addFilesBtn.disabled = false;
+                addFilesBtn.textContent = '➕ Add New Files';
+            }
+        });
+    </script>
+</body>
+</html>
