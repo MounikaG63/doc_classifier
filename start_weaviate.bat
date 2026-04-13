@@ -18,6 +18,7 @@ docker run -d ^
   -e DEFAULT_VECTORIZER_MODULE=none ^
   -e ENABLE_MODULES= ^
   -e CLUSTER_HOSTNAME=node1 ^
+  -e CLUSTER_ADVERTISE_ADDR=127.0.0.1 ^
   -v "%cd%\weaviate_data:/var/lib/weaviate" ^
   semitechnologies/weaviate:latest
 

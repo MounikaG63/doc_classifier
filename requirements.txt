@@ -1,14 +1,16 @@
 # Core ML/AI Libraries
-torch==2.8.0
-torchvision==0.23.0
-transformers==4.55.3
-sentence-transformers==5.1.0
+torch>=2.10.0
+torchvision>=0.25.0
+transformers==4.38.2
+sentence-transformers>=3.0.0
 
 # OCR Libraries
 easyocr==1.7.2
 paddleocr==3.2.0
 paddlepaddle==3.2.0
 surya-ocr
+pytesseract
+rapidocr-onnxruntime
 
 # Computer Vision (use ONLY ONE opencv package)
 opencv-contrib-python==4.10.0.84
@@ -23,10 +25,10 @@ Django==4.2.7
 # Document Processing
 PyMuPDF==1.26.3
 pdf2image==1.17.0
-Pillow==11.2.1
+Pillow>=10.2.0,<11.0.0
 poppler-utils==0.1.0
 
 # Utilities
-numpy==2.2.6
-scipy==1.15.3
-scikit-learn==1.7.1
+numpy>=2.0.0
+scipy>=1.10.0
+scikit-learn>=1.5.0

@@ -224,7 +224,11 @@ def get_resources():
 def classify_document(request):
     # ... existing code ...
     
-    vector_db, embedder, easy_ocr, paddle_ocr, surya_ocr = get_resources()
+    # For Weaviate version:
+    easy_ocr, paddle_ocr, surya_ocr, rapid_ocr, hybrid_classifier = get_resources()
+    
+    # For Standard version:
+    collection, embedder, easy_ocr, paddle_ocr, surya_ocr, rapid_ocr = get_resources()
     
     # ... OCR processing ...
     

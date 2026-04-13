@@ -10,9 +10,9 @@
     <div class="container">
         <header>
             <h1> OCR Document Classifier</h1>
-            <p>Classify documents using Tesseract, EasyOCR, PaddleOCR, or Surya</p>
+            <p>Classify documents using Tesseract, EasyOCR, PaddleOCR, RapidOCR, or Surya</p>
         </header>
-
+                                                        
         <div class="sidebar">
             <h2> Database Settings</h2>
             
@@ -34,6 +34,10 @@
                     <label>
                         <input type="radio" name="db_ocr_engine" value="surya">
                         Surya
+                    </label>
+                    <label>
+                        <input type="radio" name="db_ocr_engine" value="rapidocr">
+                        RapidOCR
                     </label>
                 </div>
                 <small style="color: #666; display: block; margin-top: 5px;">
@@ -73,6 +77,10 @@
                         <label>
                             <input type="radio" name="classify_ocr_engine" value="surya">
                             Surya (ML-based)
+                        </label>
+                        <label>
+                            <input type="radio" name="classify_ocr_engine" value="rapidocr">
+                            RapidOCR (Fast)
                         </label>
                     </div>
                     <small style="color: #666; display: block; margin-top: 5px;">

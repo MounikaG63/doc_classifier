@@ -11,7 +11,9 @@ from PIL import Image
 import fitz
 import easyocr
 from paddleocr import PaddleOCR
+from rapidocr_onnxruntime import RapidOCR
 
+import threading
 from .weaviate_client import get_weaviate_store
 from .hybrid_classifier import WeaviateHybridClassifier
 
@@ -19,36 +21,45 @@ from .hybrid_classifier import WeaviateHybridClassifier
 easy_ocr = None
 paddle_ocr = None
 surya_ocr = None
+rapid_ocr = None
 hybrid_classifier = None
+resource_lock = threading.Lock()
+paddle_lock = threading.Lock()
 
 
 def get_resources():
     """Initialize OCR engines and hybrid classifier"""
-    global easy_ocr, paddle_ocr, surya_ocr, hybrid_classifier
-    
-    if easy_ocr is None:
-        easy_ocr = easyocr.Reader(["en"], gpu=False)
-    
-    if paddle_ocr is None:
-        try:
-            print("Attempting to initialize PaddleOCR...")
-            paddle_ocr = PaddleOCR(use_angle_cls=True, lang='en')
-            print("✓ PaddleOCR initialized successfully")
-        except Exception as e:
-            print(f"✗ Failed to initialize PaddleOCR: {e}")
-            paddle_ocr = None
+    global easy_ocr, paddle_ocr, surya_ocr, rapid_ocr, hybrid_classifier
+    with resource_lock:
+        if easy_ocr is None:
+            easy_ocr = easyocr.Reader(["en"], gpu=False)
+        
+        if paddle_ocr is None:
+            try:
+                print("Attempting to initialize PaddleOCR...")
+                paddle_ocr = PaddleOCR(use_angle_cls=True, lang='en')
+                print("✓ PaddleOCR initialized successfully")
+            except Exception as e:
+                print(f"✗ Failed to initialize PaddleOCR: {e}")
+                paddle_ocr = None
+        
+        if rapid_ocr is None:
+            try:
+                print("Attempting to initialize RapidOCR...")
+                rapid_ocr = RapidOCR()
+                print("✓ RapidOCR initialized successfully")
+            except Exception as e:
+                print(f"✗ Failed to initialize RapidOCR: {e}")
+                rapid_ocr = None
     
     if surya_ocr is None:
         try:
             print("Attempting to initialize Surya OCR...")
-            from surya.foundation import FoundationPredictor
             from surya.recognition import RecognitionPredictor
             from surya.detection import DetectionPredictor
-            foundation = FoundationPredictor()
             detection = DetectionPredictor()
-            recognition = RecognitionPredictor(foundation)
+            recognition = RecognitionPredictor()
             surya_ocr = {
-                'foundation': foundation,
                 'recognition': recognition,
                 'detection': detection
             }
@@ -66,7 +77,7 @@ def get_resources():
             print(f"✗ Failed to initialize Hybrid Classifier: {e}")
             hybrid_classifier = None
     
-    return easy_ocr, paddle_ocr, surya_ocr, hybrid_classifier
+    return easy_ocr, paddle_ocr, surya_ocr, rapid_ocr, hybrid_classifier
 
 
 def extract_text_from_pdf_direct(path):
@@ -111,12 +122,16 @@ def preprocess_image(path):
 def extract_text_paddleocr(path, paddle_ocr):
     """Extract text using PaddleOCR"""
     try:
-        if path.lower().endswith(".pdf"):
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in [".jpg", ".jpeg", ".png", ".bmp", ".pdf"]:
+            return f"ERROR: Unsupported file type for PaddleOCR: {ext}"
+        if ext == ".pdf":
             direct_text = extract_text_from_pdf_direct(path)
             if direct_text and len(direct_text) > 50:
                 return direct_text
         
-        result = paddle_ocr.predict(path)
+        with paddle_lock:
+            result = paddle_ocr.predict(path)
         if not result:
             return "ERROR: PaddleOCR returned empty result"
         
@@ -234,6 +249,39 @@ def extract_text_surya(path, surya_ocr):
         return f"ERROR: {str(e)} | {traceback.format_exc()[:200]}"
 
 
+def extract_text_rapidocr(path, rapid_ocr):
+    """Extract text using RapidOCR with layout-aware sorting"""
+    try:
+        if rapid_ocr is None:
+            return "ERROR: RapidOCR not initialized"
+        
+        if path.lower().endswith(".pdf"):
+            direct_text = extract_text_from_pdf_direct(path)
+            if direct_text and len(direct_text) > 50:
+                return direct_text
+            
+            pages = pdf_to_images(path)
+            full_text = ""
+            for img in pages:
+                results, _ = rapid_ocr(img)
+                if results:
+                    # Sort results by y then x
+                    results.sort(key=lambda x: (x[0][0][1], x[0][0][0]))
+                    full_text += " " + " ".join([line[1] for line in results])
+                if os.path.exists(img):
+                    os.remove(img)
+            return full_text.strip()
+        
+        results, _ = rapid_ocr(path)
+        if results:
+            # Sort results by y then x
+            results.sort(key=lambda x: (x[0][0][1], x[0][0][0]))
+            return " ".join([line[1] for line in results])
+        return "ERROR: No text found in image"
+    except Exception as e:
+        return f"ERROR: {str(e)}"
+
+
 def index(request):
     """Main page for Weaviate classifier"""
     return render(request, 'weaviate_classifier/index.html')
@@ -252,90 +300,107 @@ def classify_document(request):
     ext = file.name.split('.')[-1].lower()
     temp_path = f"temp_upload.{ext}"
     
-    # Save uploaded file
-    with open(temp_path, 'wb+') as f:
-        for chunk in file.chunks():
-            f.write(chunk)
-    
-    easy_ocr, paddle_ocr, surya_ocr, hybrid_classifier = get_resources()
-    start_time = time.time()
-    
-    # Extract text using selected OCR engine
-    if ocr_engine == 'tesseract':
-        extracted_text = extract_text_tesseract(temp_path)
-        engine_name = "Tesseract"
-    elif ocr_engine == 'easyocr':
-        extracted_text = extract_text_easyocr(temp_path, easy_ocr)
-        engine_name = "EasyOCR"
-    elif ocr_engine == 'paddleocr':
-        extracted_text = extract_text_paddleocr(temp_path, paddle_ocr)
-        engine_name = "PaddleOCR"
-    elif ocr_engine == 'surya':
-        extracted_text = extract_text_surya(temp_path, surya_ocr)
-        engine_name = "Surya"
-    else:
-        os.remove(temp_path)
-        return JsonResponse({'error': 'Invalid OCR engine'}, status=400)
-    
-    processing_time = time.time() - start_time
-    
-    # Classify using hybrid approach
-    if extracted_text.strip() and not extracted_text.startswith("ERROR") and hybrid_classifier:
-        try:
-            classification_result = hybrid_classifier.classify(extracted_text)
-            
-            results = {
-                "ocr_engine": engine_name,
-                "document_type": classification_result["document_type"],
-                "confidence": classification_result["confidence"],
-                "classification_method": classification_result["method"],
-                "vector_score": classification_result.get("vector_score", 0),
-                "keyword_score": classification_result.get("keyword_score", 0),
-                "details": classification_result.get("details", ""),
-                "ocr_text": extracted_text[:1000],
-                "processing_time": round(processing_time, 2),
-                "top_3_matches": classification_result.get("top_3_matches", [])
-            }
-        except Exception as e:
-            results = {
-                "ocr_engine": engine_name,
-                "document_type": "unknown",
-                "reason": f"classification_error: {str(e)}",
-                "processing_time": round(processing_time, 2)
-            }
-    else:
-        # Fallback to Gemini if OCR fails
-        try:
-            from classifier.gemini_classifier import classify_with_gemini
-            gemini_result = classify_with_gemini(temp_path)
-            if "error" not in gemini_result:
+    results = {}
+    try:
+        # Save uploaded file
+        with open(temp_path, 'wb+') as f:
+            for chunk in file.chunks():
+                f.write(chunk)
+        
+        easy_ocr, paddle_ocr, surya_ocr, rapid_ocr, hybrid_classifier = get_resources()
+        start_time = time.time()
+        
+        # Extract text using selected OCR engine
+        if ocr_engine == 'tesseract':
+            extracted_text = extract_text_tesseract(temp_path)
+            engine_name = "Tesseract"
+        elif ocr_engine == 'easyocr':
+            extracted_text = extract_text_easyocr(temp_path, easy_ocr)
+            engine_name = "EasyOCR"
+        elif ocr_engine == 'paddleocr':
+            extracted_text = extract_text_paddleocr(temp_path, paddle_ocr)
+            engine_name = "PaddleOCR"
+        elif ocr_engine == 'surya':
+            extracted_text = extract_text_surya(temp_path, surya_ocr)
+            engine_name = "Surya"
+        elif ocr_engine == 'rapidocr':
+            extracted_text = extract_text_rapidocr(temp_path, rapid_ocr)
+            engine_name = "RapidOCR"
+        else:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            return JsonResponse({'error': 'Invalid OCR engine'}, status=400)
+        
+        processing_time = time.time() - start_time
+        
+        # Classify using hybrid approach
+        if extracted_text.strip() and not extracted_text.startswith("ERROR") and hybrid_classifier:
+            try:
+                classification_result = hybrid_classifier.classify(extracted_text)
+                
                 results = {
-                    "ocr_engine": f"{engine_name} + Gemini (fallback)",
-                    "document_type": gemini_result.get("doc_type", "unknown"),
-                    "category": gemini_result.get("category", ""),
-                    "sub_category": gemini_result.get("sub_category", ""),
-                    "confidence": gemini_result.get("confidence", ""),
+                    "ocr_engine": engine_name,
+                    "document_type": classification_result["document_type"],
+                    "confidence": classification_result["confidence"],
+                    "classification_method": classification_result["method"],
+                    "vector_score": classification_result.get("vector_score", 0),
+                    "keyword_score": classification_result.get("keyword_score", 0),
+                    "details": classification_result.get("details", ""),
+                    "ocr_text": extracted_text[:2000],
                     "processing_time": round(processing_time, 2),
-                    "gemini_used": True,
-                    "reason": "OCR failed, classified using Gemini Vision"
+                    "top_3_matches": classification_result.get("top_3_matches", [])
                 }
-            else:
+            except Exception as e:
                 results = {
                     "ocr_engine": engine_name,
                     "document_type": "unknown",
-                    "reason": f"ocr_failed and gemini_error: {gemini_result.get('error', 'Unknown')}",
+                    "confidence": 0.0,
+                    "ocr_text": extracted_text[:2000],
+                    "reason": f"classification_error: {str(e)}",
                     "processing_time": round(processing_time, 2)
                 }
-        except Exception as e:
-            results = {
-                "ocr_engine": engine_name,
-                "document_type": "unknown",
-                "reason": f"ocr_failed: {extracted_text[:100]}, gemini_error: {str(e)}",
-                "processing_time": round(processing_time, 2)
-            }
-    
-    os.remove(temp_path)
-    return JsonResponse(results)
+        else:
+            # Fallback to Gemini if OCR fails
+            try:
+                from classifier.gemini_classifier import classify_with_gemini
+                gemini_result = classify_with_gemini(temp_path)
+                if "error" not in gemini_result:
+                    results = {
+                        "ocr_engine": f"{engine_name} + Gemini (fallback)",
+                        "document_type": gemini_result.get("doc_type", "unknown"),
+                        "category": gemini_result.get("category", ""),
+                        "sub_category": gemini_result.get("sub_category", ""),
+                        "ocr_text": extracted_text[:2000],
+                        "confidence": gemini_result.get("confidence", ""),
+                        "processing_time": round(processing_time, 2),
+                        "gemini_used": True,
+                        "reason": "OCR failed, classified using Gemini Vision"
+                    }
+                else:
+                    results = {
+                        "ocr_engine": engine_name,
+                        "document_type": "unknown",
+                        "confidence": 0.0,
+                        "reason": f"ocr_failed and gemini_error: {gemini_result.get('error', 'Unknown')}",
+                        "processing_time": round(processing_time, 2)
+                    }
+            except Exception as e:
+                results = {
+                    "ocr_engine": engine_name,
+                    "document_type": "unknown",
+                    "confidence": 0.0,
+                    "reason": f"ocr_failed: {extracted_text[:100]}, gemini_error: {str(e)}",
+                    "processing_time": round(processing_time, 2)
+                }
+        
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        return JsonResponse(results)
+    except Exception as e:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        import traceback
+        return JsonResponse({'error': f'Server error: {str(e)}', 'traceback': traceback.format_exc()[:500]}, status=500)
 
 
 @csrf_exempt
@@ -347,7 +412,7 @@ def rebuild_database(request):
     data = json.loads(request.body)
     ocr_engine = data.get('ocr_engine', 'easyocr')
     
-    easy_ocr, paddle_ocr, surya_ocr, hybrid_classifier = get_resources()
+    easy_ocr, paddle_ocr, surya_ocr, rapid_ocr, hybrid_classifier = get_resources()
     
     if not hybrid_classifier:
         return JsonResponse({'error': 'Hybrid classifier not initialized'}, status=500)
@@ -378,6 +443,8 @@ def rebuild_database(request):
                 text = extract_text_tesseract(path)
             elif ocr_engine == "surya":
                 text = extract_text_surya(path, surya_ocr)
+            elif ocr_engine == "rapidocr":
+                text = extract_text_rapidocr(path, rapid_ocr)
             else:
                 text = extract_text_easyocr(path, easy_ocr)
             
@@ -408,7 +475,7 @@ def add_new_files(request):
     data = json.loads(request.body)
     ocr_engine = data.get('ocr_engine', 'easyocr')
     
-    easy_ocr, paddle_ocr, surya_ocr, hybrid_classifier = get_resources()
+    easy_ocr, paddle_ocr, surya_ocr, rapid_ocr, hybrid_classifier = get_resources()
     
     if not hybrid_classifier:
         return JsonResponse({'error': 'Hybrid classifier not initialized'}, status=500)
@@ -443,6 +510,8 @@ def add_new_files(request):
                 text = extract_text_tesseract(path)
             elif ocr_engine == "surya":
                 text = extract_text_surya(path, surya_ocr)
+            elif ocr_engine == "rapidocr":
+                text = extract_text_rapidocr(path, rapid_ocr)
             else:
                 text = extract_text_easyocr(path, easy_ocr)
             
@@ -468,6 +537,8 @@ def get_db_stats(request):
     """Get Weaviate database statistics"""
     try:
         weaviate_store = get_weaviate_store()
+        if weaviate_store is None:
+            return JsonResponse({'error': 'Weaviate store not initialized'}, status=503)
         stats = weaviate_store.get_stats()
         return JsonResponse(stats)
     except Exception as e:
@@ -478,6 +549,11 @@ def health_check(request):
     """Check Weaviate connection health"""
     try:
         weaviate_store = get_weaviate_store()
+        if weaviate_store is None:
+            return JsonResponse({
+                'healthy': False,
+                'message': 'Weaviate store not initialized (check connection/configuration)'
+            }, status=503)
         is_healthy = weaviate_store.health_check()
         return JsonResponse({
             'healthy': is_healthy,

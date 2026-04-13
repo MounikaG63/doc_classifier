@@ -1,7 +1,19 @@
 # Weaviate Document Classifier Guide
 
 ## Overview
+s
+- Legal: Lease Agreements, Sale Deeds, Title Deeds
+- Business: Invoices, Purchase Orders, Balance Sheets, P&L Statements
+- Employment: Appointment Letters, Experience Letters, Relieving Letters
 
+## Installation & Setup
+
+### 1. Install Weaviate
+
+#### Option A: Quick Start Scripts (Recommended)
+
+**Windows:**
+```bash 
 The Weaviate Document Classifier is an advanced document classification system that combines:
 - **Weaviate Vector Database** for semantic similarity search
 - **Hybrid Classification** using vector similarity + keyword matching
@@ -52,19 +64,7 @@ The Weaviate Document Classifier is an advanced document classification system t
 ### 4. Document Types Supported
 - Identity Documents: Aadhaar, PAN, Passport, Driving License, Voter ID
 - Financial: Bank Statements, Salary Slips, Tax Returns, GST Returns
-- Utility Bills: Electricity, Water, Gas
-- Legal: Lease Agreements, Sale Deeds, Title Deeds
-- Business: Invoices, Purchase Orders, Balance Sheets, P&L Statements
-- Employment: Appointment Letters, Experience Letters, Relieving Letters
-
-## Installation & Setup
-
-### 1. Install Weaviate
-
-#### Option A: Quick Start Scripts (Recommended)
-
-**Windows:**
-```bash
+- Utility Bills: Electricity, Water, Ga
 # Run the provided batch script
 start_weaviate.bat
 ```

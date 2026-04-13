@@ -7,12 +7,14 @@ import chromadb
 from sentence_transformers import SentenceTransformer
 import easyocr
 from paddleocr import PaddleOCR
+from rapidocr_onnxruntime import RapidOCR
 from PIL import Image
 import fitz
 import time
 import zipfile
 import tempfile
 import shutil
+import threading
 # Removed hybrid classifier - using simple vector similarity
 
 DB_PATH = "db"
@@ -22,56 +24,79 @@ chroma_client = None
 collection = None
 embedder = None
 easy_ocr = None
+paddle_ocr = None
 surya_ocr = None
+rapid_ocr = None
+resource_lock = threading.Lock()
+paddle_lock = threading.Lock()
 
 
 def get_resources():
-    global chroma_client, collection, embedder, easy_ocr, paddle_ocr, surya_ocr
-    if chroma_client is None:
-        chroma_client = chromadb.PersistentClient(path=DB_PATH)
-        collection = chroma_client.get_or_create_collection("text_docs")
-        embedder = SentenceTransformer("all-MiniLM-L6-v2")
-        easy_ocr = easyocr.Reader(["en"], gpu=False)
-        import sys
-        try:
-            print("Attempting to initialize PaddleOCR...", file=sys.stderr)
-            paddle_ocr = PaddleOCR(use_angle_cls=True, lang='en')
-            print("✓ PaddleOCR initialized successfully", file=sys.stderr)
-        except Exception as e:
-            import traceback
-            print(f"✗ Failed to initialize PaddleOCR: {e}", file=sys.stderr)
-            paddle_ocr = None
-        try:
-            print("Attempting to initialize Surya OCR...", file=sys.stderr)
-            from surya.foundation import FoundationPredictor
-            from surya.recognition import RecognitionPredictor
-            from surya.detection import DetectionPredictor
-            foundation = FoundationPredictor()
-            detection = DetectionPredictor()  # No argument needed
-            recognition = RecognitionPredictor(foundation)
-            surya_ocr = {
-                'foundation': foundation,
-                'recognition': recognition,
-                'detection': detection
-            }
-            print("✓ Surya OCR initialized successfully", file=sys.stderr)
-        except Exception as e:
-            import traceback
-            print(f"✗ Failed to initialize Surya OCR: {e}", file=sys.stderr)
-            print(traceback.format_exc(), file=sys.stderr)
-            surya_ocr = None
-    return collection, embedder, easy_ocr, paddle_ocr, surya_ocr
+    global chroma_client, collection, embedder, easy_ocr, paddle_ocr, surya_ocr, rapid_ocr
+    with resource_lock:
+        if chroma_client is None:
+            chroma_client = chromadb.PersistentClient(path=DB_PATH)
+            collection = chroma_client.get_or_create_collection("text_docs")
+            embedder = SentenceTransformer("all-MiniLM-L6-v2")
+            easy_ocr = easyocr.Reader(["en"], gpu=False)
+            import sys
+            try:
+                print("Attempting to initialize PaddleOCR...", file=sys.stderr)
+                paddle_ocr = PaddleOCR(use_angle_cls=True, lang='en')
+                print("✓ PaddleOCR initialized successfully", file=sys.stderr)
+            except Exception as e:
+                import traceback
+                print(f"✗ Failed to initialize PaddleOCR: {e}", file=sys.stderr)
+                paddle_ocr = None
+            try:
+                print("Attempting to initialize RapidOCR...", file=sys.stderr)
+                rapid_ocr = RapidOCR()
+                print("✓ RapidOCR initialized successfully", file=sys.stderr)
+            except Exception as e:
+                print(f"✗ Failed to initialize RapidOCR: {e}", file=sys.stderr)
+                rapid_ocr = None
+            try:
+                print("Attempting to initialize Surya OCR...", file=sys.stderr)
+                from surya.recognition import RecognitionPredictor
+                from surya.detection import DetectionPredictor
+                
+                print("Loading Surya Detection model...", file=sys.stderr)
+                detection = DetectionPredictor()
+                print("Loading Surya Recognition model...", file=sys.stderr)
+                recognition = RecognitionPredictor()
+                
+                surya_ocr = {
+                    'recognition': recognition,
+                    'detection': detection
+                }
+                print("✓ Surya OCR initialized successfully", file=sys.stderr)
+            except Exception as e:
+                import traceback
+                print(f"✗ Failed to initialize Surya OCR: {e}", file=sys.stderr)
+                print(traceback.format_exc(), file=sys.stderr)
+                surya_ocr = None
+    return collection, embedder, easy_ocr, paddle_ocr, surya_ocr, rapid_ocr
 
 
-def pdf_to_images(pdf_path):
+def pdf_to_images(pdf_path, return_pil=False):
     doc = fitz.open(pdf_path)
-    image_paths = []
+    images = []
     for i, page in enumerate(doc):
         pix = page.get_pixmap(dpi=200)
-        out_path = f"{pdf_path}_page_{i}.png"
-        pix.save(out_path)
-        image_paths.append(out_path)
-    return image_paths
+        if return_pil:
+            try:
+                from PIL import Image as PILImage
+                import io
+                img_data = pix.tobytes("png")
+                images.append(PILImage.open(io.BytesIO(img_data)).convert("RGB"))
+            except Exception as e:
+                print(f"Error converting page {i} to PIL: {e}")
+        else:
+            out_path = f"{pdf_path}_page_{i}.png"
+            pix.save(out_path)
+            images.append(out_path)
+    doc.close()
+    return images
 
 
 def preprocess_image(path):
@@ -97,15 +122,17 @@ def extract_text_from_pdf_direct(path):
         return full_text.strip()
     except:
         return ""
-
-
 def extract_text_paddleocr(path, paddle_ocr):
     try:
-        if path.lower().endswith(".pdf"):
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in [".jpg", ".jpeg", ".png", ".bmp", ".pdf"]:
+            return f"ERROR: Unsupported file type for PaddleOCR: {ext}"
+        if ext == ".pdf":
             direct_text = extract_text_from_pdf_direct(path)
             if direct_text and len(direct_text) > 50:
                 return direct_text
-        result = paddle_ocr.predict(path)
+        with paddle_lock:
+            result = paddle_ocr.predict(path)
         if not result:
             return "ERROR: PaddleOCR returned empty result"
         all_texts = []
@@ -164,6 +191,38 @@ def extract_text_easyocr(path, easy_ocr):
         return f"ERROR: {str(e)}"
 
 
+def extract_text_rapidocr(path, rapid_ocr):
+    """Extract text using RapidOCR with layout-aware sorting"""
+    try:
+        if rapid_ocr is None:
+            return "ERROR: RapidOCR not initialized"
+        if path.lower().endswith(".pdf"):
+            direct_text = extract_text_from_pdf_direct(path)
+            if direct_text and len(direct_text) > 50:
+                return direct_text
+            pages = pdf_to_images(path)
+            full_text = ""
+            for img in pages:
+                results, _ = rapid_ocr(img)
+                if results:
+                    # Sort results by y (top-left y) then x (top-left x)
+                    # result structure: [box, text, confidence]
+                    # box: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+                    results.sort(key=lambda x: (x[0][0][1], x[0][0][0]))
+                    full_text += " " + " ".join([line[1] for line in results])
+                if os.path.exists(img):
+                    os.remove(img)
+            return full_text.strip()
+        results, _ = rapid_ocr(path)
+        if results:
+            # Sort results by y then x
+            results.sort(key=lambda x: (x[0][0][1], x[0][0][0]))
+            return " ".join([line[1] for line in results])
+        return "ERROR: No text found in image"
+    except Exception as e:
+        return f"ERROR: {str(e)}"
+
+
 def extract_text_surya(path, surya_ocr):
     try:
         if surya_ocr is None:
@@ -173,28 +232,30 @@ def extract_text_surya(path, surya_ocr):
             direct_text = extract_text_from_pdf_direct(path)
             if direct_text and len(direct_text) > 50:
                 return direct_text
-            pages = pdf_to_images(path)
-            full_text = ""
-            for img_path in pages:
-                try:
-                    img = PILImage.open(img_path).convert("RGB")
-                    # Pass det_predictor to recognition - it handles detection internally
-                    rec_results = surya_ocr['recognition'](
-                        [img],
-                        det_predictor=surya_ocr['detection']
-                    )
-                    for page_result in rec_results:
-                        if hasattr(page_result, 'text_lines'):
-                            for line in page_result.text_lines:
-                                full_text += " " + line.text
-                        elif hasattr(page_result, 'text'):
-                            full_text += " " + page_result.text
-                except Exception as e:
-                    full_text += f" [Error: {str(e)}]"
-                os.remove(img_path)
-            return full_text.strip() if full_text.strip() else "ERROR: No text extracted from PDF"
+            pages = pdf_to_images(path, return_pil=True)
+            if not pages:
+                return "ERROR: Could not convert PDF to images"
+                
+            try:
+                # Batch processing for Surya - more efficient than page-by-page
+                rec_results = surya_ocr['recognition'](
+                    pages,
+                    det_predictor=surya_ocr['detection']
+                )
+                
+                full_text = ""
+                for page_result in rec_results:
+                    if hasattr(page_result, 'text_lines'):
+                        for line in page_result.text_lines:
+                            full_text += " " + line.text
+                    elif hasattr(page_result, 'text'):
+                        full_text += " " + page_result.text
+                return full_text.strip() if full_text.strip() else "ERROR: No text extracted from PDF"
+            except Exception as e:
+                return f"ERROR: Surya batch processing failed: {str(e)}"
+        
+        # Single image handling
         img = PILImage.open(path).convert("RGB")
-        # Pass det_predictor to recognition - it handles detection internally
         rec_results = surya_ocr['recognition'](
             [img],
             det_predictor=surya_ocr['detection']
@@ -229,109 +290,119 @@ def classify_document(request):
     ext = file.name.split('.')[-1].lower()
     temp_path = f"temp_upload.{ext}"
     
-    with open(temp_path, 'wb+') as f:
-        for chunk in file.chunks():
-            f.write(chunk)
-    
-    collection, embedder, easy_ocr, paddle_ocr, surya_ocr = get_resources()
-    start_time = time.time()
-    
-    if ocr_engine == 'tesseract':
-        extracted_text = extract_text_tesseract(temp_path)
-        engine_name = "Tesseract"
-    elif ocr_engine == 'easyocr':
-        extracted_text = extract_text_easyocr(temp_path, easy_ocr)
-        engine_name = "EasyOCR"
-    elif ocr_engine == 'paddleocr':
-        extracted_text = extract_text_paddleocr(temp_path, paddle_ocr)
-        engine_name = "PaddleOCR"
-    elif ocr_engine == 'surya':
-        extracted_text = extract_text_surya(temp_path, surya_ocr)
-        engine_name = "Surya"
-    else:
-        os.remove(temp_path)
-        return JsonResponse({'error': 'Invalid OCR engine'}, status=400)
-    
-    processing_time = time.time() - start_time
     results = {}
-    
-    if extracted_text.strip() and not extracted_text.startswith("ERROR"):
-        text_vec = embedder.encode([extracted_text])[0].tolist()
-        try:
-            # Simple vector similarity search
-            query_res = collection.query(query_embeddings=[text_vec], n_results=5)
-            
-            if query_res["metadatas"] and query_res["metadatas"][0]:
-                # Get the best match (highest similarity)
-                best_match = query_res["metadatas"][0][0]
-                best_distance = query_res["distances"][0][0]
-                confidence = (1 - best_distance) * 100  # Convert distance to confidence percentage
+    try:
+        with open(temp_path, 'wb+') as f:
+            for chunk in file.chunks():
+                f.write(chunk)
+        
+        collection, embedder, easy_ocr, paddle_ocr, surya_ocr, rapid_ocr = get_resources()
+        start_time = time.time()
+        
+        if ocr_engine == 'tesseract':
+            extracted_text = extract_text_tesseract(temp_path)
+            engine_name = "Tesseract"
+        elif ocr_engine == 'easyocr':
+            extracted_text = extract_text_easyocr(temp_path, easy_ocr)
+            engine_name = "EasyOCR"
+        elif ocr_engine == 'paddleocr':
+            extracted_text = extract_text_paddleocr(temp_path, paddle_ocr)
+            engine_name = "PaddleOCR"
+        elif ocr_engine == 'surya':
+            extracted_text = extract_text_surya(temp_path, surya_ocr)
+            engine_name = "Surya"
+        elif ocr_engine == 'rapidocr':
+            extracted_text = extract_text_rapidocr(temp_path, rapid_ocr)
+            engine_name = "RapidOCR"
+        else:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            return JsonResponse({'error': 'Invalid OCR engine'}, status=400)
+        
+        processing_time = time.time() - start_time
+        if extracted_text.strip() and not extracted_text.startswith("ERROR"):
+            text_vec = embedder.encode([extracted_text])[0].tolist()
+            try:
+                # Simple vector similarity search
+                query_res = collection.query(query_embeddings=[text_vec], n_results=5)
                 
-                # Prepare top 3 matches for display
-                top_3_matches = []
-                for i in range(min(3, len(query_res["metadatas"][0]))):
-                    doc_type = query_res["metadatas"][0][i]["label"]
-                    vector_score = (1 - query_res["distances"][0][i]) * 100
+                if query_res["metadatas"] and query_res["metadatas"][0]:
+                    # Get the best match (highest similarity)
+                    best_match = query_res["metadatas"][0][0]
+                    best_distance = query_res["distances"][0][0]
+                    confidence = (1 - best_distance) * 100  # Convert distance to confidence percentage
                     
-                    top_3_matches.append({
-                        "rank": i + 1,
-                        "type": doc_type,
-                        "vector_score": round(vector_score, 2),
-                        "confidence": round(vector_score, 2)
-                    })
-                
-                # Prepare response
-                results = {
-                    "ocr_engine": engine_name,
-                    "document_type": best_match["label"],
-                    "confidence": round(confidence, 2),
-                    "classification_method": "vector_similarity",
-                    "ocr_text": extracted_text[:1000],
-                    "processing_time": round(processing_time, 2),
-                    "top_3_matches": top_3_matches
-                }
-            else:
-                results = {
-                    "ocr_engine": engine_name,
-                    "document_type": "unknown",
-                    "reason": "no_match_in_database"
-                }
-        except Exception as e:
-            results = {
-                "ocr_engine": engine_name,
-                "document_type": "unknown",
-                "reason": f"vector_search_error: {str(e)}"
-            }
-    else:
-        try:
-            from .gemini_classifier import classify_with_gemini
-            gemini_result = classify_with_gemini(temp_path)
-            if "error" not in gemini_result:
-                results = {
-                    "ocr_engine": f"{engine_name} + Gemini (fallback)",
-                    "document_type": gemini_result.get("doc_type", "unknown"),
-                    "category": gemini_result.get("category", ""),
-                    "sub_category": gemini_result.get("sub_category", ""),
-                    "confidence": gemini_result.get("confidence", ""),
-                    "processing_time": round(processing_time, 2),
-                    "gemini_used": True,
-                    "reason": "OCR failed, classified using Gemini Vision"
-                }
-            else:
+                    # Prepare top 3 matches for display
+                    top_3_matches = []
+                    for i in range(min(3, len(query_res["metadatas"][0]))):
+                        doc_type = query_res["metadatas"][0][i]["label"]
+                        vector_score = (1 - query_res["distances"][0][i]) * 100
+                        
+                        top_3_matches.append({
+                            "rank": i + 1,
+                            "type": doc_type,
+                            "vector_score": round(vector_score, 2),
+                            "confidence": round(vector_score, 2)
+                        })
+                    
+                    # Prepare response
+                    results = {
+                        "ocr_engine": engine_name,
+                        "document_type": best_match["label"],
+                        "confidence": round(confidence, 2),
+                        "classification_method": "vector_similarity",
+                        "ocr_text": extracted_text[:1000],
+                        "processing_time": round(processing_time, 2),
+                        "top_3_matches": top_3_matches
+                    }
+                else:
+                    results = {
+                        "ocr_engine": engine_name,
+                        "document_type": "unknown",
+                        "reason": "no_match_in_database"
+                    }
+            except Exception as e:
                 results = {
                     "ocr_engine": engine_name,
                     "document_type": "unknown",
-                    "reason": f"ocr_failed and gemini_error: {gemini_result.get('error', 'Unknown')}"
+                    "reason": f"vector_search_error: {str(e)}"
                 }
-        except Exception as e:
-            results = {
-                "ocr_engine": engine_name,
-                "document_type": "unknown",
-                "reason": f"ocr_failed: {extracted_text[:100]}, gemini_error: {str(e)}"
-            }
-    
-    os.remove(temp_path)
-    return JsonResponse(results)
+        else:
+            try:
+                from .gemini_classifier import classify_with_gemini
+                gemini_result = classify_with_gemini(temp_path)
+                if "error" not in gemini_result:
+                    results = {
+                        "ocr_engine": f"{engine_name} + Gemini (fallback)",
+                        "document_type": gemini_result.get("doc_type", "unknown"),
+                        "category": gemini_result.get("category", ""),
+                        "sub_category": gemini_result.get("sub_category", ""),
+                        "confidence": gemini_result.get("confidence", ""),
+                        "processing_time": round(processing_time, 2),
+                        "gemini_used": True,
+                        "reason": "OCR failed, classified using Gemini Vision"
+                    }
+                else:
+                    results = {
+                        "ocr_engine": engine_name,
+                        "document_type": "unknown",
+                        "reason": f"ocr_failed and gemini_error: {gemini_result.get('error', 'Unknown')}"
+                    }
+            except Exception as e:
+                results = {
+                    "ocr_engine": engine_name,
+                    "document_type": "unknown",
+                    "reason": f"ocr_failed: {extracted_text[:100]}, gemini_error: {str(e)}"
+                }
+        
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        return JsonResponse(results)
+    except Exception as e:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        import traceback
+        return JsonResponse({'error': f'Server error: {str(e)}', 'traceback': traceback.format_exc()[:500]}, status=500)
 
 
 @csrf_exempt
@@ -354,7 +425,7 @@ def classify_zip(request):
     temp_zip.close()
     
     temp_dir = tempfile.mkdtemp()
-    collection, embedder, easy_ocr, paddle_ocr, surya_ocr = get_resources()
+    collection, embedder, easy_ocr, paddle_ocr, surya_ocr, rapid_ocr = get_resources()
     all_results = []
     supported_extensions = {'.jpg', '.jpeg', '.png', '.pdf'}
     
@@ -383,6 +454,9 @@ def classify_zip(request):
                 elif ocr_engine == 'surya':
                     extracted_text = extract_text_surya(file_path, surya_ocr)
                     engine_name = "Surya"
+                elif ocr_engine == 'rapidocr':
+                    extracted_text = extract_text_rapidocr(file_path, rapid_ocr)
+                    engine_name = "RapidOCR"
                 else:
                     continue
                 
@@ -460,7 +534,7 @@ def rebuild_database(request):
         pass
     
     collection = chroma_client.get_or_create_collection("text_docs")
-    _, embedder, easy_ocr, paddle_ocr, surya_ocr = get_resources()
+    collection, embedder, easy_ocr, paddle_ocr, surya_ocr, rapid_ocr = get_resources()
     
     added = 0
     total = 0
@@ -478,6 +552,8 @@ def rebuild_database(request):
                 text = extract_text_tesseract(path)
             elif ocr_engine == "surya":
                 text = extract_text_surya(path, surya_ocr)
+            elif ocr_engine == "rapidocr":
+                text = extract_text_rapidocr(path, rapid_ocr)
             else:
                 text = extract_text_easyocr(path, easy_ocr)
             
@@ -501,7 +577,7 @@ def add_new_files(request):
     data = json.loads(request.body)
     ocr_engine = data.get('ocr_engine', 'easyocr')
     
-    collection, embedder, easy_ocr, paddle_ocr, surya_ocr = get_resources()
+    collection, embedder, easy_ocr, paddle_ocr, surya_ocr, rapid_ocr = get_resources()
     existing_ids = set(collection.get().get("ids", []))
     added = 0
     
@@ -520,6 +596,8 @@ def add_new_files(request):
                 text = extract_text_tesseract(path)
             elif ocr_engine == "surya":
                 text = extract_text_surya(path, surya_ocr)
+            elif ocr_engine == "rapidocr":
+                text = extract_text_rapidocr(path, rapid_ocr)
             else:
                 text = extract_text_easyocr(path, easy_ocr)
             
@@ -535,7 +613,7 @@ def add_new_files(request):
 
 
 def get_db_stats(request):
-    collection, _, _, _, _ = get_resources()
+    collection, _, _, _, _, _ = get_resources()
     try:
         doc_count = collection.count()
         all_docs = collection.get()

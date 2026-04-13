@@ -276,13 +276,17 @@ def get_weaviate_store() -> WeaviateDocumentStore:
     global _weaviate_store
     
     if _weaviate_store is None:
-        # Configuration from environment or defaults
-        url = os.environ.get('WEAVIATE_URL', 'http://localhost:8080')
-        api_key = os.environ.get('WEAVIATE_API_KEY')
-        
-        _weaviate_store = WeaviateDocumentStore(
-            url=url,
-            api_key=api_key
-        )
+        try:
+            # Configuration from environment or defaults
+            url = os.environ.get('WEAVIATE_URL', 'http://localhost:8080')
+            api_key = os.environ.get('WEAVIATE_API_KEY')
+            
+            _weaviate_store = WeaviateDocumentStore(
+                url=url,
+                api_key=api_key
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize Weaviate store: {e}")
+            return None
     
     return _weaviate_store

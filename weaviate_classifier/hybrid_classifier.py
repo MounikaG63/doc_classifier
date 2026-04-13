@@ -25,7 +25,7 @@ class WeaviateHybridClassifier:
                 r"male|female",
                 r"address.*pin.*code"
             ],
-            "pan_card": [
+            "pan_card_individual": [
                 r"permanent account number",
                 r"income tax department",
                 r"pan\s*card",
@@ -60,7 +60,7 @@ class WeaviateHybridClassifier:
                 r"age.*as.*on",
                 r"father.*name|husband.*name"
             ],
-            "bank_statement": [
+            "bank-statements": [
                 r"bank.*statement",
                 r"account.*statement",
                 r"transaction.*history",
@@ -69,7 +69,7 @@ class WeaviateHybridClassifier:
                 r"ifsc.*code",
                 r"account.*number|a/c.*no"
             ],
-            "salary_slip": [
+            "payroll_samples": [
                 r"salary.*slip|pay.*slip",
                 r"employee.*id|emp.*id",
                 r"basic.*salary|basic.*pay",
@@ -78,7 +78,7 @@ class WeaviateHybridClassifier:
                 r"pf.*number|esi.*number",
                 r"pay.*period|salary.*month"
             ],
-            "electricity_bill": [
+            "electricity": [
                 r"electricity.*bill|electric.*bill",
                 r"power.*supply|electricity.*board",
                 r"consumer.*number|consumer.*id",
@@ -87,7 +87,7 @@ class WeaviateHybridClassifier:
                 r"due.*date|bill.*date",
                 r"tariff|rate"
             ],
-            "water_bill": [
+            "water": [
                 r"water.*bill|water.*tax",
                 r"water.*supply|water.*department",
                 r"consumer.*number|connection.*id",
@@ -95,7 +95,7 @@ class WeaviateHybridClassifier:
                 r"due.*date|bill.*period",
                 r"cubic.*meter|liters|gallons"
             ],
-            "gas_bill": [
+            "gas": [
                 r"gas.*bill|lpg.*bill",
                 r"gas.*connection|cylinder",
                 r"consumer.*number|customer.*id",
@@ -103,7 +103,7 @@ class WeaviateHybridClassifier:
                 r"booking.*id|delivery",
                 r"kg|cylinder.*capacity"
             ],
-            "property_tax": [
+            "Property-Tax-Report": [
                 r"property.*tax|house.*tax",
                 r"municipal.*corporation|municipality",
                 r"assessment.*number|property.*id",
@@ -160,7 +160,7 @@ class WeaviateHybridClassifier:
                 r"challan.*identification.*number|cin",
                 r"deductor.*tan|deductee.*pan"
             ],
-            "lease_agreement": [
+            "lease-or-rent-agreemnet": [
                 r"lease.*agreement|rent.*agreement",
                 r"lessor|lessee",
                 r"monthly.*rent|rental.*amount",
@@ -184,7 +184,7 @@ class WeaviateHybridClassifier:
                 r"revenue.*records|land.*records",
                 r"mutation.*entry|khata.*number"
             ],
-            "80g_certificate": [
+            "80g-certificate": [
                 r"80g.*certificate|section.*80g",
                 r"income.*tax.*act.*1961",
                 r"charitable.*institution|charitable.*trust",
@@ -192,7 +192,7 @@ class WeaviateHybridClassifier:
                 r"eligible.*for.*deduction|tax.*exemption",
                 r"registration.*number.*under.*section"
             ],
-            "appointment_letter": [
+            "Appointment-letter": [
                 r"appointment.*letter|offer.*letter",
                 r"we.*are.*pleased.*to.*offer|we.*offer.*you",
                 r"position|designation|job.*title",
@@ -216,7 +216,7 @@ class WeaviateHybridClassifier:
                 r"employment.*terminated|services.*terminated",
                 r"handover.*responsibilities|transition"
             ],
-            "balance_sheet": [
+            "balancesheet": [
                 r"balance.*sheet",
                 r"assets.*and.*liabilities|assets.*&.*liabilities",
                 r"current.*assets|fixed.*assets",
@@ -278,16 +278,65 @@ class WeaviateHybridClassifier:
                 r"unit.*rate|quoted.*price",
                 r"terms.*of.*supply|delivery.*terms",
                 r"thank.*you.*for.*your.*inquiry"
+            ],
+            "AOA": [
+                r"articles.*of.*association",
+                r"memorandum.*of.*association",
+                r"companies.*act",
+                r"regulations.*of.*the.*company",
+                r"share.*capital",
+                r"board.*of.*directors"
+            ],
+            "COI": [
+                r"certificate.*of.*incorporation",
+                r"registrar.*of.*companies",
+                r"ministry.*of.*corporate.*affairs",
+                r"hereby.*certify.*that",
+                r"cin.*\b[UuL]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6}\b"
+            ],
+            "MOA": [
+                r"memorandum.*of.*association",
+                r"articles.*of.*association",
+                r"name.*of.*the.*company",
+                r"registered.*office",
+                r"objects.*clause",
+                r"liability.*of.*members"
+            ],
+            "tradeLicense": [
+                r"trade.*licen[cs]e",
+                r"municipal.*corporation",
+                r"health.*department",
+                r"renewal.*of.*licen[cs]e",
+                r"valid.*from.*to",
+                r"nature.*of.*business"
+            ],
+            "startupIndiaCertificate": [
+                r"startup.*india",
+                r"department.*for.*promotion.*of.*industry",
+                r"recognition.*certificate",
+                r"dpiit.*recognition",
+                r"eligible.*for.*tax.*benefits"
             ]
         }
     
+    def _normalize_label(self, label: str) -> str:
+        """Normalize label for comparison"""
+        return label.lower().replace("-", "_").replace(" ", "_")
+
     def calculate_keyword_score(self, text: str, doc_type: str) -> float:
         """Calculate keyword matching score for a document type"""
-        if doc_type not in self.IDENTIFIER_RULES:
+        # Normalize lookup
+        norm_doc_type = self._normalize_label(doc_type)
+        
+        # Build normalized rules mapping if not already done
+        if not hasattr(self, "_norm_rules"):
+            self._norm_rules = {self._normalize_label(k): v for k, v in self.IDENTIFIER_RULES.items()}
+            
+        if norm_doc_type not in self._norm_rules:
             return 0.0
         
         text_lower = text.lower()
-        rules = self.IDENTIFIER_RULES[doc_type]
+        rules = self._norm_rules[norm_doc_type]
         matches = 0
         
         for rule in rules:

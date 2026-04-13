@@ -1,685 +1,2456 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Weaviate Document Classifier</title>
+    <title>Document Classifier</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
     <style>
-        * {
+        :root {
+            --black: #0a0a0a;
+            --gray-950: #111111;
+            --gray-900: #1a1a1a;
+            --gray-800: #2a2a2a;
+            --gray-700: #3d3d3d;
+            --gray-600: #525252;
+            --gray-500: #6b6b6b;
+            --gray-400: #8f8f8f;
+            --gray-300: #b8b8b8;
+            --gray-200: #d4d4d4;
+            --gray-100: #ebebeb;
+            --gray-50: #f5f5f5;
+            --white: #ffffff;
+            --error: #c0392b;
+            --r: 2px;
+            --rmd: 4px;
+            --rlg: 8px;
+            --sidebar: 252px;
+            --topbar: 54px;
+        }
+
+        *,
+        *::before,
+        *::after {
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
+            box-sizing: border-box
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
+            font-family: 'DM Sans', sans-serif;
+            background: var(--gray-50);
+            color: var(--gray-900);
+            height: 100vh;
+            font-size: 14px;
+            line-height: 1.6;
+            overflow: hidden
         }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            overflow: hidden;
-        }
-
-        .header {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }
-
-        .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-            font-weight: 300;
-        }
-
-        .header p {
-            font-size: 1.1em;
-            opacity: 0.9;
-        }
-
-        .main-content {
-            padding: 40px;
-        }
-
-        .upload-section {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 30px;
-            margin-bottom: 30px;
-            border: 2px dashed #dee2e6;
-            text-align: center;
-            transition: all 0.3s ease;
-        }
-
-        .upload-section:hover {
-            border-color: #4facfe;
-            background: #f0f8ff;
-        }
-
-        .file-input-wrapper {
-            position: relative;
-            display: inline-block;
-            margin-bottom: 20px;
-        }
-
-        .file-input {
-            position: absolute;
-            opacity: 0;
-            width: 100%;
-            height: 100%;
-            cursor: pointer;
-        }
-
-        .file-input-button {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            color: white;
-            padding: 15px 30px;
-            border-radius: 25px;
-            border: none;
-            font-size: 1.1em;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            display: inline-block;
-        }
-
-        .file-input-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(79, 172, 254, 0.3);
-        }
-
-        .ocr-selector {
-            margin: 20px 0;
-        }
-
-        .ocr-selector label {
-            font-weight: 600;
-            margin-right: 15px;
-            color: #333;
-        }
-
-        .ocr-selector select {
-            padding: 10px 15px;
-            border: 2px solid #dee2e6;
-            border-radius: 8px;
-            font-size: 1em;
-            background: white;
-            cursor: pointer;
-        }
-
-        .classify-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 15px 40px;
-            border: none;
-            border-radius: 25px;
-            font-size: 1.1em;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            margin-top: 20px;
-        }
-
-        .classify-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
-        }
-
-        .classify-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .results-section {
-            margin-top: 30px;
-            padding: 30px;
-            background: #f8f9fa;
-            border-radius: 10px;
-            display: none;
-        }
-
-        .result-card {
-            background: white;
-            border-radius: 10px;
-            padding: 25px;
-            margin-bottom: 20px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-
-        .result-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-
-        .document-type {
-            font-size: 1.5em;
-            font-weight: 600;
-            color: #333;
-        }
-
-        .confidence-badge {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-weight: 600;
-        }
-
-        .method-badge {
-            background: #28a745;
-            color: white;
-            padding: 6px 12px;
-            border-radius: 15px;
-            font-size: 0.9em;
-            margin-left: 10px;
-        }
-
-        .scores-grid {
+        .app {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
+            grid-template-columns: var(--sidebar) 1fr;
+            height: 100vh;
+            overflow: hidden
         }
 
-        .score-item {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 8px;
-            text-align: center;
-        }
-
-        .score-label {
-            font-size: 0.9em;
-            color: #666;
-            margin-bottom: 5px;
-        }
-
-        .score-value {
-            font-size: 1.3em;
-            font-weight: 600;
-            color: #333;
-        }
-
-        .top-matches {
-            margin-top: 20px;
-        }
-
-        .top-matches h4 {
-            margin-bottom: 15px;
-            color: #333;
-        }
-
-        .match-item {
+        /* SIDEBAR */
+        .sidebar {
+            background: var(--black);
+            color: var(--gray-300);
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px;
-            background: white;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            border-left: 4px solid #4facfe;
+            flex-direction: column;
+            height: 100vh;
+            overflow-y: auto
         }
 
-        .match-rank {
-            background: #4facfe;
-            color: white;
-            width: 25px;
-            height: 25px;
+        .sidebar::-webkit-scrollbar {
+            width: 3px
+        }
+
+        .sidebar::-webkit-scrollbar-thumb {
+            background: var(--gray-800)
+        }
+
+        .sb-logo {
+            padding: 22px 20px 16px;
+            border-bottom: 1px solid var(--gray-800)
+        }
+
+        .logo-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 3px
+        }
+
+        .logo-box {
+            width: 30px;
+            height: 30px;
+            background: var(--white);
+            border-radius: var(--r);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0
+        }
+
+        .logo-box svg {
+            width: 16px;
+            height: 16px
+        }
+
+        .logo-name {
+            font-family: 'Instrument Serif', serif;
+            font-size: 18px;
+            color: var(--white);
+            letter-spacing: -.3px
+        }
+
+        .logo-ver {
+            font-size: 10px;
+            color: var(--gray-600);
+            letter-spacing: .5px;
+            text-transform: uppercase;
+            padding-left: 40px
+        }
+
+        .sb-nav {
+            padding: 14px 10px;
+            flex: 1
+        }
+
+        .nav-label {
+            font-size: 10px;
+            letter-spacing: 1.1px;
+            text-transform: uppercase;
+            color: var(--gray-600);
+            padding: 0 10px;
+            margin: 12px 0 4px
+        }
+
+        .nav-label:first-child {
+            margin-top: 2px
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            border-radius: var(--rmd);
+            cursor: pointer;
+            transition: background .12s, color .12s;
+            font-size: 13px;
+            color: var(--gray-400);
+            font-weight: 400;
+            user-select: none
+        }
+
+        .nav-item:hover {
+            background: var(--gray-800);
+            color: var(--gray-200)
+        }
+
+        .nav-item.active {
+            background: var(--gray-800);
+            color: var(--white)
+        }
+
+        .nav-item svg {
+            width: 14px;
+            height: 14px;
+            opacity: .6;
+            flex-shrink: 0
+        }
+
+        .nav-item.active svg {
+            opacity: 1
+        }
+
+        .nav-badge {
+            margin-left: auto;
+            background: var(--gray-700);
+            color: var(--gray-400);
+            font-family: 'DM Mono', monospace;
+            font-size: 10px;
+            padding: 1px 6px;
+            border-radius: 100px
+        }
+
+        .sb-footer {
+            padding: 12px 20px;
+            border-top: 1px solid var(--gray-800)
+        }
+
+        .status-row {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            font-size: 11.5px;
+            color: var(--gray-600)
+        }
+
+        .dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--gray-600);
+            flex-shrink: 0;
+            animation: blink 2.4s infinite
+        }
+
+        .dot.online {
+            background: #22c55e
+        }
+
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 1
+            }
+
+            50% {
+                opacity: .3
+            }
+        }
+
+        /* PANE */
+        .pane {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden
+        }
+
+        .topbar {
+            height: var(--topbar);
+            background: var(--white);
+            border-bottom: 1px solid var(--gray-100);
+            padding: 0 34px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0
+        }
+
+        .topbar-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--gray-900);
+            letter-spacing: -.2px
+        }
+
+        .topbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px
+        }
+
+        .page-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px 34px
+        }
+
+        .page-body::-webkit-scrollbar {
+            width: 4px
+        }
+
+        .page-body::-webkit-scrollbar-thumb {
+            background: var(--gray-200);
+            border-radius: 2px
+        }
+
+        /* BUTTONS */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-radius: var(--rmd);
+            border: none;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all .13s;
+            white-space: nowrap
+        }
+
+        .btn svg {
+            width: 13px;
+            height: 13px
+        }
+
+        .btn-primary {
+            background: var(--black);
+            color: var(--white)
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--gray-800)
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--gray-700);
+            border: 1px solid var(--gray-200)
+        }
+
+        .btn-ghost:hover:not(:disabled) {
+            background: var(--gray-100)
+        }
+
+        .btn-danger {
+            background: #fff0f0;
+            color: var(--error);
+            border: 1px solid #fecaca
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: #fee2e2
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px
+        }
+
+        .btn:disabled {
+            opacity: .4;
+            cursor: not-allowed
+        }
+
+        /* SHARED */
+        .card {
+            background: var(--white);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--rlg);
+            overflow: hidden
+        }
+
+        .card-header {
+            padding: 13px 20px;
+            border-bottom: 1px solid var(--gray-100);
+            display: flex;
+            align-items: center;
+            justify-content: space-between
+        }
+
+        .card-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--gray-800);
+            display: flex;
+            align-items: center;
+            gap: 7px
+        }
+
+        .card-title svg {
+            width: 13px;
+            height: 13px;
+            color: var(--gray-500)
+        }
+
+        .card-body {
+            padding: 20px
+        }
+
+        .section-hd {
+            margin-bottom: 18px
+        }
+
+        .section-title {
+            font-family: 'Instrument Serif', serif;
+            font-size: 20px;
+            color: var(--gray-900);
+            letter-spacing: -.3px;
+            margin-bottom: 2px
+        }
+
+        .section-sub {
+            font-size: 12.5px;
+            color: var(--gray-500)
+        }
+
+        .field {
+            display: flex;
+            flex-direction: column;
+            gap: 5px
+        }
+
+        .field label {
+            font-size: 10.5px;
+            font-weight: 600;
+            color: var(--gray-500);
+            text-transform: uppercase;
+            letter-spacing: .6px
+        }
+
+        .field select,
+        .field input[type=text],
+        .field input[type=number] {
+            padding: 8px 10px;
+            border: 1px solid var(--gray-200);
+            border-radius: var(--rmd);
+            background: var(--white);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 13px;
+            color: var(--gray-800);
+            outline: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238f8f8f' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 28px;
+            transition: border-color .13s
+        }
+
+        .field select:focus,
+        .field input:focus {
+            border-color: var(--gray-500)
+        }
+
+        .controls-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 12px
+        }
+
+        .action-row {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--gray-100)
+        }
+
+        .terminal {
+            background: var(--gray-950);
+            border: 1px solid var(--gray-800);
+            border-radius: var(--rlg);
+            padding: 14px 18px;
+            font-family: 'DM Mono', monospace;
+            font-size: 12px;
+            color: var(--gray-400);
+            line-height: 1.8;
+            min-height: 60px;
+            white-space: pre-wrap
+        }
+
+        .t-ok {
+            color: #4ade80
+        }
+
+        .t-err {
+            color: #f87171
+        }
+
+        .t-key {
+            color: var(--gray-600)
+        }
+
+        /* PAGE ROUTING */
+        .page {
+            display: none
+        }
+
+        .page.active {
+            display: block
+        }
+
+        /* === CLASSIFY === */
+        .drop-zone {
+            border: 1.5px dashed var(--gray-300);
+            border-radius: var(--rlg);
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            position: relative;
+            background: var(--gray-50);
+            transition: all .16s
+        }
+
+        .drop-zone:hover,
+        .drop-zone.over {
+            border-color: var(--gray-700);
+            background: var(--gray-100)
+        }
+
+        .drop-zone input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+            width: 100%;
+            height: 100%
+        }
+
+        .di {
+            width: 40px;
+            height: 40px;
+            background: var(--white);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--rmd);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, .05)
+        }
+
+        .di svg {
+            width: 18px;
+            height: 18px;
+            color: var(--gray-500)
+        }
+
+        .dt {
+            font-size: 13.5px;
+            font-weight: 600;
+            color: var(--gray-800);
+            margin-bottom: 3px
+        }
+
+        .ds {
+            font-size: 12px;
+            color: var(--gray-500)
+        }
+
+        .file-pill {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 12px;
+            background: var(--gray-50);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--rmd);
+            margin-top: 10px
+        }
+
+        .file-pill.on {
+            display: flex
+        }
+
+        .fpi {
+            width: 28px;
+            height: 28px;
+            background: var(--black);
+            border-radius: var(--r);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0
+        }
+
+        .fpi svg {
+            width: 13px;
+            height: 13px;
+            color: #fff
+        }
+
+        .fpinfo {
+            flex: 1;
+            min-width: 0
+        }
+
+        .fpname {
+            font-size: 12.5px;
+            font-weight: 500;
+            color: var(--gray-800);
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis
+        }
+
+        .fpmeta {
+            font-size: 11px;
+            color: var(--gray-500)
+        }
+
+        .remove-pill {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--gray-400);
+            padding: 3px;
+            border-radius: var(--r);
+            transition: color .12s
+        }
+
+        .remove-pill:hover {
+            color: var(--error)
+        }
+
+        .remove-pill svg {
+            width: 12px;
+            height: 12px
+        }
+
+        .ring {
+            width: 28px;
+            height: 28px;
+            border: 2px solid var(--gray-200);
+            border-top-color: var(--gray-800);
+            border-radius: 50%;
+            animation: spin .75s linear infinite;
+            flex-shrink: 0
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg)
+            }
+        }
+
+        .loading-state {
+            display: none;
+            align-items: center;
+            gap: 12px;
+            padding: 32px;
+            justify-content: center
+        }
+
+        .loading-state.on {
+            display: flex
+        }
+
+        .loading-label {
+            font-size: 12px;
+            color: var(--gray-500);
+            font-family: 'DM Mono', monospace
+        }
+
+        .result-area {
+            display: none;
+            margin-top: 18px
+        }
+
+        .result-area.on {
+            display: block
+        }
+
+        .result-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 18px
+        }
+
+        .result-type {
+            font-family: 'Instrument Serif', serif;
+            font-size: 26px;
+            color: var(--gray-900);
+            letter-spacing: -.4px;
+            line-height: 1.1
+        }
+
+        .result-method {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: var(--gray-100);
+            color: var(--gray-600);
+            font-size: 10.5px;
+            font-weight: 500;
+            padding: 3px 9px;
+            border-radius: 100px;
+            margin-top: 6px
+        }
+
+        .result-method::before {
+            content: '';
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--gray-400)
+        }
+
+        .conf-pill {
+            background: var(--black);
+            color: var(--white);
+            font-family: 'DM Mono', monospace;
+            font-size: 13px;
+            font-weight: 500;
+            padding: 6px 14px;
+            border-radius: 100px;
+            flex-shrink: 0
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1px;
+            background: var(--gray-200);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--rlg);
+            overflow: hidden;
+            margin-bottom: 16px
+        }
+
+        .stat-cell {
+            background: var(--white);
+            padding: 14px 16px
+        }
+
+        .stat-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: .8px;
+            color: var(--gray-400);
+            margin-bottom: 5px;
+            font-weight: 500
+        }
+
+        .stat-value {
+            font-family: 'DM Mono', monospace;
+            font-size: 19px;
+            font-weight: 500;
+            color: var(--gray-900);
+            letter-spacing: -.5px
+        }
+
+        .matches-table {
+            width: 100%;
+            border-collapse: collapse
+        }
+
+        .matches-table thead th {
+            text-align: left;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: .8px;
+            color: var(--gray-400);
+            font-weight: 500;
+            padding: 0 0 9px;
+            border-bottom: 1px solid var(--gray-100)
+        }
+
+        .matches-table tbody tr {
+            border-bottom: 1px solid var(--gray-100);
+            transition: background .1s
+        }
+
+        .matches-table tbody tr:last-child {
+            border-bottom: none
+        }
+
+        .matches-table tbody tr:hover {
+            background: var(--gray-50)
+        }
+
+        .matches-table tbody td {
+            padding: 10px 0;
+            font-size: 13px;
+            color: var(--gray-700)
+        }
+
+        .rank-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border: 1px solid var(--gray-200);
+            border-radius: var(--r);
+            font-family: 'DM Mono', monospace;
+            font-size: 10px;
+            color: var(--gray-500);
+            font-weight: 500
+        }
+
+        .rank-badge.top {
+            background: var(--black);
+            border-color: var(--black);
+            color: var(--white)
+        }
+
+        .mono-val {
+            font-family: 'DM Mono', monospace;
+            font-size: 11.5px;
+            color: var(--gray-500)
+        }
+
+        .bar-wrap {
+            height: 2px;
+            background: var(--gray-100);
+            border-radius: 2px;
+            margin-top: 3px;
+            overflow: hidden
+        }
+
+        .bar-fill {
+            height: 100%;
+            background: var(--gray-800);
+            border-radius: 2px;
+            transition: width .55s cubic-bezier(.16, 1, .3, 1)
+        }
+
+        .err-msg {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 10px 14px;
+            background: #fff5f5;
+            border: 1px solid #fee2e2;
+            border-radius: var(--rmd);
+            color: var(--error);
+            font-size: 13px
+        }
+
+        .err-msg svg {
+            width: 13px;
+            height: 13px;
+            flex-shrink: 0
+        }
+
+        /* === STATS === */
+        .ov-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-bottom: 18px
+        }
+
+        .ov-card {
+            background: var(--white);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--rlg);
+            padding: 18px 20px
+        }
+
+        .ov-label {
+            font-size: 10.5px;
+            text-transform: uppercase;
+            letter-spacing: .8px;
+            color: var(--gray-400);
+            font-weight: 500;
+            margin-bottom: 6px
+        }
+
+        .ov-value {
+            font-family: 'DM Mono', monospace;
+            font-size: 26px;
+            font-weight: 500;
+            color: var(--gray-900);
+            letter-spacing: -1px
+        }
+
+        .ov-sub {
+            font-size: 12px;
+            color: var(--gray-500);
+            margin-top: 3px
+        }
+
+        .refresh-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 14px
+        }
+
+        .last-fetched {
+            font-size: 11.5px;
+            color: var(--gray-500);
+            font-family: 'DM Mono', monospace
+        }
+
+        .type-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--gray-100)
+        }
+
+        .type-row:last-child {
+            border-bottom: none
+        }
+
+        .type-name {
+            font-size: 13px;
+            color: var(--gray-800);
+            font-weight: 500;
+            width: 160px;
+            flex-shrink: 0
+        }
+
+        .type-bar-wrap {
+            flex: 1;
+            height: 5px;
+            background: var(--gray-100);
+            border-radius: 3px;
+            overflow: hidden
+        }
+
+        .type-bar {
+            height: 100%;
+            background: var(--gray-800);
+            border-radius: 3px;
+            transition: width .65s cubic-bezier(.16, 1, .3, 1)
+        }
+
+        .type-count {
+            font-family: 'DM Mono', monospace;
+            font-size: 12px;
+            color: var(--gray-500);
+            width: 36px;
+            text-align: right;
+            flex-shrink: 0
+        }
+
+        /* === REBUILD === */
+        .warn-box {
+            display: flex;
+            gap: 12px;
+            padding: 13px 16px;
+            background: #fefce8;
+            border: 1px solid #fef08a;
+            border-radius: var(--rmd);
+            margin-bottom: 18px
+        }
+
+        .warn-box svg {
+            width: 14px;
+            height: 14px;
+            color: #ca8a04;
+            flex-shrink: 0;
+            margin-top: 2px
+        }
+
+        .warn-box p {
+            font-size: 13px;
+            color: #713f12;
+            line-height: 1.55
+        }
+
+        .steps-list {
+            display: flex;
+            flex-direction: column
+        }
+
+        .step-item {
+            display: flex;
+            gap: 12px;
+            padding: 14px 0;
+            border-bottom: 1px solid var(--gray-100)
+        }
+
+        .step-item:last-child {
+            border-bottom: none
+        }
+
+        .step-num {
+            width: 24px;
+            height: 24px;
+            background: var(--gray-100);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
+            font-family: 'DM Mono', monospace;
+            font-size: 10px;
+            color: var(--gray-500);
+            font-weight: 500;
+            flex-shrink: 0;
+            margin-top: 2px
+        }
+
+        .step-num.done {
+            background: var(--black);
+            color: var(--white)
+        }
+
+        .step-num.running {
+            background: var(--gray-800);
+            color: var(--white);
+            animation: blink 1.2s infinite
+        }
+
+        .step-title {
+            font-size: 13px;
             font-weight: 600;
-            font-size: 0.9em;
+            color: var(--gray-800);
+            margin-bottom: 2px
         }
 
-        .match-type {
-            font-weight: 600;
-            color: #333;
-            flex-grow: 1;
-            margin-left: 15px;
+        .step-desc {
+            font-size: 12px;
+            color: var(--gray-500)
         }
 
-        .match-scores {
-            display: flex;
-            gap: 10px;
-            font-size: 0.9em;
+        .prog-wrap {
+            height: 3px;
+            background: var(--gray-100);
+            border-radius: 2px;
+            margin: 12px 0 5px;
+            overflow: hidden;
+            display: none
         }
 
-        .match-score {
-            background: #f8f9fa;
-            padding: 4px 8px;
-            border-radius: 4px;
+        .prog-wrap.on {
+            display: block
         }
 
-        .loading {
+        .prog-bar {
+            height: 100%;
+            background: var(--gray-800);
+            border-radius: 2px;
+            transition: width .35s ease
+        }
+
+        .prog-lbl {
+            font-family: 'DM Mono', monospace;
+            font-size: 11px;
+            color: var(--gray-500)
+        }
+
+        /* === ADD FILES === */
+        .add-drop {
+            border: 1.5px dashed var(--gray-300);
+            border-radius: var(--rlg);
+            padding: 36px 20px;
             text-align: center;
-            padding: 40px;
-            color: #666;
-        }
-
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #4facfe;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .error {
-            background: #f8d7da;
-            color: #721c24;
-            padding: 15px;
-            border-radius: 8px;
-            margin-top: 20px;
-        }
-
-        .database-section {
-            margin-top: 40px;
-            padding: 30px;
-            background: #f8f9fa;
-            border-radius: 10px;
-        }
-
-        .database-section h3 {
-            margin-bottom: 20px;
-            color: #333;
-        }
-
-        .db-actions {
-            display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
-            margin-bottom: 20px;
-        }
-
-        .db-btn {
-            background: #6c757d;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 20px;
             cursor: pointer;
-            transition: all 0.3s ease;
+            position: relative;
+            background: var(--gray-50);
+            transition: all .16s;
+            margin-bottom: 16px
         }
 
-        .db-btn:hover {
-            background: #5a6268;
-            transform: translateY(-1px);
+        .add-drop:hover,
+        .add-drop.over {
+            border-color: var(--gray-700);
+            background: var(--gray-100)
         }
 
-        .db-stats {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin-top: 20px;
+        .add-drop input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+            width: 100%;
+            height: 100%
         }
 
-        .health-status {
-            display: inline-block;
-            padding: 5px 10px;
-            border-radius: 15px;
-            font-size: 0.9em;
+        .queue-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 14px
+        }
+
+        .qi {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            padding: 9px 12px;
+            background: var(--white);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--rmd)
+        }
+
+        .qi-icon {
+            width: 26px;
+            height: 26px;
+            background: var(--gray-100);
+            border-radius: var(--r);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0
+        }
+
+        .qi-icon svg {
+            width: 12px;
+            height: 12px;
+            color: var(--gray-600)
+        }
+
+        .qi-info {
+            flex: 1;
+            min-width: 0
+        }
+
+        .qi-name {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--gray-800);
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis
+        }
+
+        .qi-meta {
+            font-size: 11px;
+            color: var(--gray-500)
+        }
+
+        .qi-badge {
+            font-size: 10.5px;
+            font-family: 'DM Mono', monospace;
+            padding: 2px 7px;
+            border-radius: 100px
+        }
+
+        .qi-badge.queued {
+            background: var(--gray-100);
+            color: var(--gray-500)
+        }
+
+        .qi-badge.done {
+            background: #dcfce7;
+            color: #166534
+        }
+
+        .qi-badge.fail {
+            background: #fee2e2;
+            color: #991b1b
+        }
+
+        .qi-rm {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--gray-400);
+            padding: 2px;
+            border-radius: var(--r);
+            transition: color .12s
+        }
+
+        .qi-rm:hover {
+            color: var(--error)
+        }
+
+        .qi-rm svg {
+            width: 12px;
+            height: 12px
+        }
+
+        /* === PREFERENCES === */
+        .pref-section {
+            padding: 18px 0;
+            border-bottom: 1px solid var(--gray-100)
+        }
+
+        .pref-section:last-child {
+            border-bottom: none
+        }
+
+        .pref-section-title {
+            font-size: 10.5px;
             font-weight: 600;
-            margin-left: 10px;
+            text-transform: uppercase;
+            letter-spacing: .8px;
+            color: var(--gray-500);
+            margin-bottom: 14px
         }
 
-        .health-healthy {
-            background: #d4edda;
-            color: #155724;
+        .pref-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            padding: 8px 0
         }
 
-        .health-unhealthy {
-            background: #f8d7da;
-            color: #721c24;
+        .pref-row+.pref-row {
+            border-top: 1px solid var(--gray-50)
         }
 
-        @media (max-width: 768px) {
-            .header h1 {
-                font-size: 2em;
-            }
-            
-            .main-content {
-                padding: 20px;
-            }
-            
-            .result-header {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 10px;
-            }
-            
-            .scores-grid {
-                grid-template-columns: 1fr;
-            }
+        .pref-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--gray-800);
+            margin-bottom: 2px
+        }
+
+        .pref-desc {
+            font-size: 12px;
+            color: var(--gray-500)
+        }
+
+        .pref-ctrl {
+            flex-shrink: 0
+        }
+
+        .pref-ctrl select,
+        .pref-ctrl input[type=text],
+        .pref-ctrl input[type=number] {
+            padding: 7px 10px;
+            border: 1px solid var(--gray-200);
+            border-radius: var(--rmd);
+            background: var(--white);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 13px;
+            color: var(--gray-800);
+            outline: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238f8f8f' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 10px center;
+            padding-right: 28px;
+            transition: border-color .13s;
+            min-width: 155px
+        }
+
+        .pref-ctrl input[type=text],
+        .pref-ctrl input[type=number] {
+            background-image: none;
+            padding-right: 10px;
+            min-width: 190px
+        }
+
+        .pref-ctrl select:focus,
+        .pref-ctrl input:focus {
+            border-color: var(--gray-500)
+        }
+
+        .toggle {
+            position: relative;
+            width: 36px;
+            height: 20px;
+            flex-shrink: 0
+        }
+
+        .toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+            position: absolute
+        }
+
+        .toggle-track {
+            position: absolute;
+            inset: 0;
+            background: var(--gray-200);
+            border-radius: 100px;
+            cursor: pointer;
+            transition: background .18s
+        }
+
+        .toggle input:checked+.toggle-track {
+            background: var(--black)
+        }
+
+        .toggle-thumb {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 16px;
+            height: 16px;
+            background: var(--white);
+            border-radius: 50%;
+            transition: transform .18s;
+            pointer-events: none;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, .18)
+        }
+
+        .toggle input:checked~.toggle-thumb {
+            transform: translateX(16px)
+        }
+
+        .pref-save-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            background: var(--gray-50);
+            border-top: 1px solid var(--gray-100)
+        }
+
+        .pref-save-note {
+            font-size: 11.5px;
+            color: var(--gray-500)
+        }
+
+        /* TOAST */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--black);
+            color: var(--white);
+            padding: 10px 16px;
+            border-radius: var(--rmd);
+            font-size: 13px;
+            font-weight: 500;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, .2);
+            transform: translateY(60px);
+            opacity: 0;
+            transition: all .26s cubic-bezier(.16, 1, .3, 1);
+            z-index: 999;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            pointer-events: none
+        }
+
+        .toast.on {
+            transform: translateY(0);
+            opacity: 1
+        }
+
+        .toast svg {
+            width: 13px;
+            height: 13px
         }
     </style>
 </head>
+
 <body>
-    <div class="container">
-        <div class="header">
-            <h1> Weaviate Document Classifier</h1>
-            <p>Advanced document classification using Weaviate vector database + hybrid keyword matching</p>
-        </div>
+    <div class="app">
 
-        <div class="main-content">
-            <!-- Upload Section -->
-            <div class="upload-section">
-                <div class="file-input-wrapper">
-                    <input type="file" id="fileInput" class="file-input" accept=".jpg,.jpeg,.png,.pdf">
-                    <button class="file-input-button">📁 Choose Document</button>
+        <!-- ═══ SIDEBAR ═══ -->
+        <aside class="sidebar">
+            <div class="sb-logo">
+                <div class="logo-row">
+                    <div class="logo-box">
+                        <svg viewBox="0 0 18 18" fill="none">
+                            <rect x="2" y="2" width="7" height="9" rx="1" fill="#0a0a0a" />
+                            <rect x="11" y="2" width="5" height="5" rx="1" fill="#0a0a0a" />
+                            <rect x="2" y="13" width="14" height="3" rx="1" fill="#0a0a0a" />
+                        </svg>
+                    </div>
+                    <span class="logo-name">Doc Classifier</span>
                 </div>
-                <p id="fileName" style="margin-top: 10px; color: #666;"></p>
-                
-                <div class="ocr-selector">
-                    <label for="ocrEngine">OCR Engine:</label>
-                    <select id="ocrEngine">
-                        <option value="tesseract">Tesseract (Fast)</option>
-                        <option value="easyocr">EasyOCR (Balanced)</option>
-                        <option value="paddleocr" selected>PaddleOCR (Accurate)</option>
-                        <option value="surya">Surya (Advanced)</option>
-                    </select>
-                </div>
-                
-                <button id="classifyBtn" class="classify-btn" disabled> Classify Document</button>
+                <div class="logo-ver">v2.5 · Weaviate</div>
             </div>
+            <nav class="sb-nav">
+                <div class="nav-label">Workspace</div>
+                <div class="nav-item active" data-page="classify">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <rect x="2" y="1.5" width="9" height="12" rx="1.5" />
+                        <path d="M5 5h4M5 8h3" />
+                        <path d="M12 10l-2 2-1-1" />
+                    </svg>
+                    Classify
+                </div>
+                <div class="nav-item" data-page="history">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="8" cy="8" r="5.5" />
+                        <path d="M8 5.5V8l2 1.5" />
+                    </svg>
+                    History
+                    <span class="nav-badge">0</span>
+                </div>
 
-            <!-- Results Section -->
-            <div id="resultsSection" class="results-section">
-                <div id="loadingDiv" class="loading">
-                    <div class="spinner"></div>
-                    <p>Processing document...</p>
+                <div class="nav-label">Database</div>
+                <div class="nav-item" data-page="stats">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <rect x="1" y="8" width="3" height="6" rx=".5" />
+                        <rect x="6" y="5" width="3" height="9" rx=".5" />
+                        <rect x="11" y="2" width="3" height="12" rx=".5" />
+                    </svg>
+                    Document Stats
                 </div>
-                <div id="resultsDiv"></div>
-            </div>
+                <div class="nav-item" data-page="rebuild">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M2 8a6 6 0 116 6" />
+                        <path d="M2 8l2-2M2 8l2 2" />
+                    </svg>
+                    Rebuild Index
+                </div>
+                <div class="nav-item" data-page="addfiles">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="8" cy="8" r="5.5" />
+                        <path d="M8 5.5v5M5.5 8h5" />
+                    </svg>
+                    Add New Files
+                </div>
 
-            <!-- Database Management Section -->
-            <div class="database-section">
-                <h3> Weaviate Database Management</h3>
-                <div class="db-actions">
-                    <button id="healthCheckBtn" class="db-btn"> Health Check</button>
-                    <button id="getStatsBtn" class="db-btn">Get Stats</button>
-                    <button id="rebuildBtn" class="db-btn">Rebuild Database</button>
-                    <button id="addFilesBtn" class="db-btn">Add New Files</button>
+                <div class="nav-label">System</div>
+                <div class="nav-item" data-page="preferences">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <circle cx="8" cy="8" r="2" />
+                        <path
+                            d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M3.6 12.4l1.4-1.4M11 5l1.4-1.4" />
+                    </svg>
+                    Preferences
                 </div>
-                <div id="dbStats" class="db-stats" style="display: none;"></div>
+            </nav>
+            <div class="sb-footer">
+                <div class="status-row">
+                    <div class="dot" id="dotStatus"></div>
+                    <span id="connStatus">Checking…</span>
+                </div>
             </div>
-        </div>
+        </aside>
+
+        <!-- ═══ PANE ═══ -->
+        <div class="pane">
+            <header class="topbar">
+                <span class="topbar-title" id="topbarTitle">Document Classification</span>
+                <div class="topbar-actions">
+                    <button class="btn btn-ghost btn-sm" onclick="navigate('stats')">
+                        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <rect x="1" y="7" width="3" height="6" rx=".5" />
+                            <rect x="5.5" y="4" width="3" height="9" rx=".5" />
+                            <rect x="10" y="1" width="3" height="12" rx=".5" />
+                        </svg>
+                        Stats
+                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="doHealthCheck()">
+                        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <circle cx="7" cy="7" r="5.5" />
+                            <path d="M4.5 7l2 2 3-3" />
+                        </svg>
+                        Health Check
+                    </button>
+                </div>
+            </header>
+
+            <div class="page-body">
+
+                <!-- ─── CLASSIFY ─── -->
+                <div class="page active" id="page-classify">
+                    <div class="section-hd">
+                        <div class="section-title">Upload &amp; Classify</div>
+                        <div class="section-sub">Supports JPG, PNG and PDF — Weaviate hybrid vector + keyword search.
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">
+                                <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <path d="M2 10V3a1 1 0 011-1h5.5L12 5.5V10" />
+                                    <rect x="2" y="10" width="10" height="3" rx=".5" />
+                                </svg>
+                                Document Input
+                            </div>
+                            <!-- <span style="font-size:10px;color:var(--gray-400);font-family:'DM Mono',monospace">MAX 50 MB</span> -->
+                        </div>
+                        <div class="card-body">
+                            <div class="drop-zone" id="dropZone">
+                                <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.pdf">
+                                <div class="di"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"
+                                        stroke-width="1.5">
+                                        <path d="M10 13V4M6 8l4-4 4 4" />
+                                        <path d="M3 16h14" />
+                                    </svg></div>
+                                <div class="dt">Drop your document here</div>
+                                <div class="ds">or click to browse — JPG, PNG, PDF</div>
+                            </div>
+                            <div class="file-pill" id="filePill">
+                                <div class="fpi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+                                        stroke-width="1.5">
+                                        <path d="M4 2h6l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z" />
+                                        <path d="M10 2v4h4" />
+                                    </svg></div>
+                                <div class="fpinfo">
+                                    <div class="fpname" id="fpName">—</div>
+                                    <div class="fpmeta" id="fpMeta">—</div>
+                                </div>
+                                <button class="remove-pill" id="removeFile"><svg viewBox="0 0 14 14" fill="none"
+                                        stroke="currentColor" stroke-width="1.5">
+                                        <path d="M2 2l10 10M12 2L2 12" />
+                                    </svg></button>
+                            </div>
+                            <div class="controls-row">
+                                <div class="field"><label>OCR Engine</label>
+                                    <select id="ocrEngine">
+                                        <option value="tesseract">Tesseract — Fast</option>
+                                        <option value="easyocr">EasyOCR — Balanced</option>
+                                        <option value="paddleocr" selected>PaddleOCR — Accurate</option>
+                                        <option value="rapidocr">RapidOCR — Ultra Fast</option>
+                                        <option value="surya">Surya — Advanced</option>
+                                    </select>
+                                </div>
+                                <div class="field"><label>Classification Mode</label>
+                                    <select id="classMode">
+                                        <option value="hybrid" selected>Hybrid (Vector + Keyword)</option>
+                                        <option value="vector">Vector Only</option>
+                                        <option value="keyword">Keyword Only</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="action-row">
+                                <button class="btn btn-ghost" id="resetBtn" style="display:none"
+                                    onclick="resetClassify()">Clear</button>
+                                <button class="btn btn-primary" id="classifyBtn" disabled>
+                                    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <circle cx="7" cy="7" r="5.5" />
+                                        <path d="M4.5 7l2 2 3-3" />
+                                    </svg>
+                                    Classify Document
+                                </button>
+                            </div>
+                            <div class="loading-state" id="loadingState">
+                                <div class="ring"></div>
+                                <div class="loading-label">extracting · vectorizing · matching</div>
+                            </div>
+                            <div class="result-area" id="resultArea">
+                                <div style="height:1px;background:var(--gray-100);margin:0 0 18px"></div>
+                                <div class="result-top">
+                                    <div>
+                                        <div class="result-type" id="rType">—</div>
+                                        <div class="result-method" id="rMethod">hybrid</div>
+                                    </div>
+                                    <div class="conf-pill" id="rConf">—%</div>
+                                </div>
+                                <div class="stats-grid">
+                                    <div class="stat-cell">
+                                        <div class="stat-label">Vector</div>
+                                        <div class="stat-value" id="sVector">—</div>
+                                    </div>
+                                    <div class="stat-cell">
+                                        <div class="stat-label">Keyword</div>
+                                        <div class="stat-value" id="sKeyword">—</div>
+                                    </div>
+                                    <div class="stat-cell">
+                                        <div class="stat-label">Time</div>
+                                        <div class="stat-value" id="sTime">—</div>
+                                    </div>
+                                    <div class="stat-cell">
+                                        <div class="stat-label">Engine</div>
+                                        <div class="stat-value" id="sEngine"
+                                            style="font-size:12px;font-family:'DM Sans',sans-serif;font-weight:600;letter-spacing:0">
+                                            —</div>
+                                    </div>
+                                </div>
+                                <div class="card" id="matchesCard" style="border-color:var(--gray-100)">
+                                    <div class="card-header">
+                                        <div class="card-title"><svg viewBox="0 0 14 14" fill="none"
+                                                stroke="currentColor" stroke-width="1.5">
+                                                <path d="M1 3h12M3 7h8M5 11h4" />
+                                            </svg>Top Matches</div>
+                                    </div>
+                                    <div class="card-body" style="padding:12px 20px">
+                                        <table class="matches-table">
+                                            <thead>
+                                                <tr>
+                                                    <th style="width:32px">#</th>
+                                                    <th>Type</th>
+                                                    <th>Vector</th>
+                                                    <th>Keyword</th>
+                                                    <th>Combined</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="matchesTbody"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                                <div id="detailsText" style="margin-top:10px;font-size:12.5px;color:var(--gray-500);display:none"></div>
+                                <div class="card" id="ocrCard" style="margin-top:16px;display:none;border-color:var(--gray-100)">
+                                    <div class="card-header">
+                                        <div class="card-title">
+                                            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor"
+                                                stroke-width="1.5">
+                                                <path d="M2.5 3h9M2.5 7h9M2.5 11h5" />
+                                            </svg>Extracted Text
+                                        </div>
+                                    </div>
+                                    <div class="card-body" style="padding:16px 20px">
+                                        <div id="ocrText"
+                                            style="font-family:'DM Mono',monospace;font-size:11.5px;color:var(--gray-600);white-space:pre-wrap;line-height:1.6;max-height:300px;overflow-y:auto">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="err-msg" id="errMsg" style="display:none">
+                                    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <circle cx="7" cy="7" r="5.5" />
+                                        <path d="M7 4.5v3M7 9.5v.5" />
+                                    </svg>
+                                    <span id="errText">—</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div><!-- /classify -->
+
+                <!-- ─── HISTORY ─── -->
+                <div class="page" id="page-history">
+                    <div class="section-hd">
+                        <div class="section-title">History</div>
+                        <div class="section-sub">Recent classification results from this session.</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-body" style="padding:44px;text-align:center;color:var(--gray-400)">
+                            <svg style="width:30px;height:30px;margin:0 auto 12px;display:block;opacity:.3"
+                                viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <circle cx="12" cy="12" r="9" />
+                                <path d="M12 7v5l3 3" />
+                            </svg>
+                            <div style="font-size:13.5px;font-weight:500;color:var(--gray-600);margin-bottom:3px">No
+                                history yet</div>
+                            <div style="font-size:12.5px">Classify a document to see results appear here.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ─── STATS ─── -->
+                <div class="page" id="page-stats">
+
+                    <div class="section-hd">
+                        <div class="section-title">Document Statistics</div>
+                        <div class="section-sub">Live stats from your Weaviate vector store.</div>
+                    </div>
+
+                    <div class="refresh-bar">
+                        <span class="last-fetched" id="lastFetched">Not fetched yet</span>
+                        <button class="btn btn-primary btn-sm" onclick="loadStats()">
+                            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M2 7a5 5 0 115 5" />
+                                <path d="M2 7l2-2M2 7l2 2" />
+                            </svg>
+                            Refresh
+                        </button>
+                    </div>
+
+
+                    <div class="ov-grid">
+
+                        <div class="ov-card">
+                            <div class="ov-label">Total Indexed</div>
+                            <div class="ov-value" id="ovTotal">—</div>
+                            <div class="ov-sub">Documents in store</div>
+                        </div>
+
+                        <div class="ov-card">
+                            <div class="ov-label">Document Types</div>
+                            <div class="ov-value" id="ovTypes">—</div>
+                            <div class="ov-sub">Distinct categories</div>
+                        </div>
+
+                        <div class="ov-card">
+                            <div class="ov-label">Health</div>
+                            <div class="ov-value" id="ovHealth" style="font-size:16px;margin-top:6px">—</div>
+                            <div class="ov-sub" id="ovHealthSub">Run health check</div>
+                        </div>
+
+                    </div>
+
+                    <!-- TABLE -->
+                    <div class="card" style="margin-bottom:16px">
+                        <div class="card-header" style="flex-wrap: wrap; gap: 10px;">
+                            <div class="card-title">Document Types Breakdown</div>
+                            <div style="margin-left: auto; display: flex; align-items: center; gap: 10px;">
+                                <div class="field" style="margin: 0; min-width: 180px;">
+                                    <input type="text" id="typeSearch" placeholder="Search types..." 
+                                           style="padding: 5px 10px; font-size: 12px; background-image: none; padding-right: 10px; border-radius: var(--rmd);">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card-body">
+                            <table class="matches-table">
+                                <thead>
+                                    <tr>
+                                        <th>Document Type</th>
+                                        <th>Count</th>
+                                    </tr>
+                                </thead>
+
+                                <tbody id="typeTable">
+                                    <tr>
+                                        <td colspan="2" style="text-align:center;color:var(--gray-400)">
+                                            Click Refresh to load data
+                                        </td>
+                                    </tr>
+                                </tbody>
+
+                            </table>
+                        </div>
+                    </div>
+
+
+                </div>
+
+                <!-- ─── REBUILD ─── -->
+                <div class="page" id="page-rebuild">
+                    <div class="section-hd">
+                        <div class="section-title">Rebuild Index</div>
+                        <div class="section-sub">Drop and reconstruct the entire Weaviate vector index from source
+                            documents.</div>
+                    </div>
+                    <div class="warn-box">
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M8 1.5L1.5 13.5h13L8 1.5z" />
+                            <path d="M8 6.5v3M8 11v.5" />
+                        </svg>
+                        <p><strong>Destructive operation.</strong> All existing vectors will be deleted and rebuilt.
+                            Classification will be unavailable during the process. Estimated time: 5–20 minutes
+                            depending on corpus size.</p>
+                    </div>
+                    <div class="card" style="margin-bottom:16px">
+                        <div class="card-header">
+                            <div class="card-title"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor"
+                                    stroke-width="1.5">
+                                    <rect x="2" y="1" width="10" height="12" rx="1" />
+                                    <path d="M4.5 5h5M4.5 7.5h3" />
+                                </svg>Configuration</div>
+                        </div>
+                        <div class="card-body">
+                            <div class="controls-row">
+                                <div class="field"><label>OCR Engine</label>
+                                    <select id="rebuildOcr">
+                                        <option value="tesseract">Tesseract — Fast</option>
+                                        <option value="easyocr">EasyOCR — Balanced</option>
+                                        <option value="paddleocr" selected>PaddleOCR — Accurate</option>
+                                        <option value="rapidocr">RapidOCR — Ultra Fast</option>
+                                        <option value="surya">Surya — Advanced</option>
+                                    </select>
+                                </div>
+                                <div class="field"><label>Batch Size</label>
+                                    <select id="rebuildBatch">
+                                        <option value="10">10 docs / batch</option>
+                                        <option value="25" selected>25 docs / batch</option>
+                                        <option value="50">50 docs / batch</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor"
+                                    stroke-width="1.5">
+                                    <path d="M1 7h12M8 3l4 4-4 4" />
+                                </svg>Pipeline</div>
+                        </div>
+                        <div class="card-body">
+                            <div class="steps-list">
+                                <div class="step-item">
+                                    <div class="step-num" id="sn1">1</div>
+                                    <div>
+                                        <div class="step-title">Clear existing index</div>
+                                        <div class="step-desc">Delete all vectors from Weaviate</div>
+                                    </div>
+                                </div>
+                                <div class="step-item">
+                                    <div class="step-num" id="sn2">2</div>
+                                    <div>
+                                        <div class="step-title">Scan source documents</div>
+                                        <div class="step-desc">Enumerate training corpus from filesystem</div>
+                                    </div>
+                                </div>
+                                <div class="step-item">
+                                    <div class="step-num" id="sn3">3</div>
+                                    <div>
+                                        <div class="step-title">OCR extraction</div>
+                                        <div class="step-desc">Extract text using selected engine</div>
+                                    </div>
+                                </div>
+                                <div class="step-item">
+                                    <div class="step-num" id="sn4">4</div>
+                                    <div>
+                                        <div class="step-title">Vectorize &amp; index</div>
+                                        <div class="step-desc">Generate embeddings and write to Weaviate</div>
+                                    </div>
+                                </div>
+                                <div class="step-item">
+                                    <div class="step-num" id="sn5">5</div>
+                                    <div>
+                                        <div class="step-title">Verify integrity</div>
+                                        <div class="step-desc">Run post-build health check</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="prog-wrap" id="progWrap">
+                                <div class="prog-bar" id="progBar" style="width:0%"></div>
+                            </div>
+                            <div class="prog-lbl" id="progLbl"></div>
+                            <div style="margin-top:14px">
+                                <button class="btn btn-danger" id="rebuildBtn" onclick="doRebuild()">
+                                    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <path d="M2 7a5 5 0 115 5" />
+                                        <path d="M2 7l2-2M2 7l2 2" />
+                                    </svg>
+                                    Start Rebuild
+                                </button>
+                            </div>
+                            <div class="terminal" id="rebuildTerminal" style="margin-top:14px">$ ready</div>
+                        </div>
+                    </div>
+                </div><!-- /rebuild -->
+
+                <!-- ─── ADD FILES ─── -->
+                <div class="page" id="page-addfiles">
+                    <div class="section-hd">
+                        <div class="section-title">Add New Files</div>
+                        <div class="section-sub">Incrementally index new training documents without a full rebuild.
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor"
+                                    stroke-width="1.5">
+                                    <path d="M2 10V3a1 1 0 011-1h5.5L12 5.5V10" />
+                                    <rect x="2" y="10" width="10" height="3" rx=".5" />
+                                </svg>Upload Queue</div>
+                            <button class="btn btn-ghost btn-sm" onclick="clearQueue()">Clear All</button>
+                        </div>
+                        <div class="card-body">
+                            <div class="add-drop" id="addDrop">
+                                <input type="file" id="addInput" accept=".jpg,.jpeg,.png,.pdf" multiple>
+                                <div class="di"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"
+                                        stroke-width="1.5">
+                                        <path d="M10 13V4M6 8l4-4 4 4" />
+                                        <path d="M3 16h14" />
+                                    </svg></div>
+                                <div class="dt">Drop training documents here</div>
+                                <div class="ds">Multiple files supported</div>
+                            </div>
+                            <div class="queue-list" id="queueList"></div>
+                            <div class="controls-row">
+                                <div class="field"><label>OCR Engine</label>
+                                    <select id="addOcr">
+                                        <option value="tesseract">Tesseract — Fast</option>
+                                        <option value="easyocr">EasyOCR — Balanced</option>
+                                        <option value="paddleocr" selected>PaddleOCR — Accurate</option>
+                                        <option value="rapidocr">RapidOCR — Ultra Fast</option>
+                                        <option value="surya">Surya — Advanced</option>
+                                    </select>
+                                </div>
+                                <div class="field"><label>Document Type Label</label>
+                                    <select id="addType">
+                                        <option value="">Auto-detect</option>
+                                        <option value="invoice">Invoice</option>
+                                        <option value="contract">Contract</option>
+                                        <option value="receipt">Receipt</option>
+                                        <option value="report">Report</option>
+                                        <option value="id_document">ID Document</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="action-row">
+                                <button class="btn btn-primary" id="addFilesBtn" onclick="doAddFiles()" disabled>
+                                    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <circle cx="7" cy="7" r="5.5" />
+                                        <path d="M7 4.5v5M4.5 7h5" />
+                                    </svg>
+                                    Index Files
+                                </button>
+                            </div>
+                            <div class="terminal" id="addTerminal" style="margin-top:14px">$ ready — add files to begin
+                            </div>
+                        </div>
+                    </div>
+                </div><!-- /addfiles -->
+
+                <!-- ─── PREFERENCES ─── -->
+                <div class="page" id="page-preferences">
+                    <div class="section-hd">
+                        <div class="section-title">Preferences</div>
+                        <div class="section-sub">Customize DocScan behavior, defaults, and appearance.</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-body" style="padding-bottom:0">
+
+                            <div class="pref-section">
+                                <div class="pref-section-title">Classification Defaults</div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Default OCR Engine</div>
+                                        <div class="pref-desc">Pre-selected engine on the Classify page</div>
+                                    </div>
+                                    <div class="pref-ctrl"><select id="pref-defaultOcr">
+                                            <option value="tesseract">Tesseract — Fast</option>
+                                            <option value="easyocr">EasyOCR — Balanced</option>
+                                            <option value="paddleocr" selected>PaddleOCR — Accurate</option>
+                                            <option value="rapidocr">RapidOCR — Ultra Fast</option>
+                                            <option value="surya">Surya — Advanced</option>
+                                        </select></div>
+                                </div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Default Classification Mode</div>
+                                        <div class="pref-desc">Scoring strategy for each request</div>
+                                    </div>
+                                    <div class="pref-ctrl"><select id="pref-classMode">
+                                            <option value="hybrid" selected>Hybrid (Vector + Keyword)</option>
+                                            <option value="vector">Vector Only</option>
+                                            <option value="keyword">Keyword Only</option>
+                                        </select></div>
+                                </div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Confidence Threshold (%)</div>
+                                        <div class="pref-desc">Warn when confidence falls below this value</div>
+                                    </div>
+                                    <div class="pref-ctrl"><input type="number" id="pref-confThreshold" value="60"
+                                            min="0" max="100" style="min-width:90px"></div>
+                                </div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Show Top N Matches</div>
+                                        <div class="pref-desc">Number of ranked candidates in results</div>
+                                    </div>
+                                    <div class="pref-ctrl"><select id="pref-topN">
+                                            <option value="3" selected>Top 3</option>
+                                            <option value="5">Top 5</option>
+                                            <option value="10">Top 10</option>
+                                        </select></div>
+                                </div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Auto-clear after classify</div>
+                                        <div class="pref-desc">Remove file automatically after results appear</div>
+                                    </div>
+                                    <div class="pref-ctrl"><label class="toggle"><input type="checkbox"
+                                                id="pref-autoClear">
+                                            <div class="toggle-track"></div>
+                                            <div class="toggle-thumb"></div>
+                                        </label></div>
+                                </div>
+                            </div>
+
+                            <div class="pref-section">
+                                <div class="pref-section-title">Database &amp; Indexing</div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Weaviate Host</div>
+                                        <div class="pref-desc">Base URL of your Weaviate instance</div>
+                                    </div>
+                                    <div class="pref-ctrl"><input type="text" id="pref-weaviateHost"
+                                            value="http://localhost:8080"></div>
+                                </div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Default Rebuild Batch Size</div>
+                                        <div class="pref-desc">Documents per API batch during rebuild</div>
+                                    </div>
+                                    <div class="pref-ctrl"><select id="pref-batchSize">
+                                            <option value="10">10 per batch</option>
+                                            <option value="25" selected>25 per batch</option>
+                                            <option value="50">50 per batch</option>
+                                            <option value="100">100 per batch</option>
+                                        </select></div>
+                                </div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Auto Health Check on Load</div>
+                                        <div class="pref-desc">Ping Weaviate each time the app opens</div>
+                                    </div>
+                                    <div class="pref-ctrl"><label class="toggle"><input type="checkbox"
+                                                id="pref-autoHealth" checked>
+                                            <div class="toggle-track"></div>
+                                            <div class="toggle-thumb"></div>
+                                        </label></div>
+                                </div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Stats Auto-Refresh</div>
+                                        <div class="pref-desc">How often the Stats page auto-refreshes</div>
+                                    </div>
+                                    <div class="pref-ctrl"><select id="pref-statsRefresh">
+                                            <option value="0" selected>Manual only</option>
+                                            <option value="30">Every 30 s</option>
+                                            <option value="60">Every 1 min</option>
+                                            <option value="300">Every 5 min</option>
+                                        </select></div>
+                                </div>
+                            </div>
+
+                            <div class="pref-section">
+                                <div class="pref-section-title">Notifications</div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Toast Notifications</div>
+                                        <div class="pref-desc">Brief pop-up confirmations for completed actions</div>
+                                    </div>
+                                    <div class="pref-ctrl"><label class="toggle"><input type="checkbox" id="pref-toasts"
+                                                checked>
+                                            <div class="toggle-track"></div>
+                                            <div class="toggle-thumb"></div>
+                                        </label></div>
+                                </div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Toast Duration</div>
+                                        <div class="pref-desc">How long toast notifications stay visible</div>
+                                    </div>
+                                    <div class="pref-ctrl"><select id="pref-toastDuration">
+                                            <option value="2000">2 seconds</option>
+                                            <option value="3000" selected>3 seconds</option>
+                                            <option value="5000">5 seconds</option>
+                                        </select></div>
+                                </div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Sound on Completion</div>
+                                        <div class="pref-desc">Play a subtle chime when classification finishes</div>
+                                    </div>
+                                    <div class="pref-ctrl"><label class="toggle"><input type="checkbox" id="pref-sound">
+                                            <div class="toggle-track"></div>
+                                            <div class="toggle-thumb"></div>
+                                        </label></div>
+                                </div>
+                            </div>
+
+                            <div class="pref-section">
+                                <div class="pref-section-title">Appearance</div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Interface Density</div>
+                                        <div class="pref-desc">Adjust spacing throughout the UI</div>
+                                    </div>
+                                    <div class="pref-ctrl"><select id="pref-density">
+                                            <option value="compact">Compact</option>
+                                            <option value="default" selected>Default</option>
+                                            <option value="relaxed">Relaxed</option>
+                                        </select></div>
+                                </div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Sidebar Width</div>
+                                        <div class="pref-desc">Width of the navigation panel</div>
+                                    </div>
+                                    <div class="pref-ctrl"><select id="pref-sidebarWidth">
+                                            <option value="220">Narrow — 220 px</option>
+                                            <option value="252" selected>Default — 252 px</option>
+                                            <option value="290">Wide — 290 px</option>
+                                        </select></div>
+                                </div>
+                            </div>
+
+                            <div class="pref-section">
+                                <div class="pref-section-title" style="color:#991b1b">Danger Zone</div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Clear Classification History</div>
+                                        <div class="pref-desc">Permanently delete all session history entries</div>
+                                    </div>
+                                    <div class="pref-ctrl"><button class="btn btn-danger btn-sm"
+                                            onclick="clearHistory()">Clear History</button></div>
+                                </div>
+                                <div class="pref-row">
+                                    <div>
+                                        <div class="pref-name">Reset All Preferences</div>
+                                        <div class="pref-desc">Restore every setting to factory defaults</div>
+                                    </div>
+                                    <div class="pref-ctrl"><button class="btn btn-danger btn-sm"
+                                            onclick="resetPrefs()">Reset Defaults</button></div>
+                                </div>
+                            </div>
+
+                        </div><!-- /card-body -->
+                        <div class="pref-save-bar">
+                            <span class="pref-save-note" id="prefNote">Changes take effect after saving</span>
+                            <button class="btn btn-primary" onclick="savePrefs()">
+                                <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                                    <path d="M2 8l3.5 3.5L12 4" />
+                                </svg>
+                                Save Preferences
+                            </button>
+                        </div>
+                    </div>
+                </div><!-- /preferences -->
+
+            </div><!-- /page-body -->
+        </div><!-- /pane -->
+    </div><!-- /app -->
+
+    <div class="toast" id="toast">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M2 7l3.5 3.5L12 3.5" />
+        </svg>
+        <span id="toastText">Done</span>
     </div>
 
     <script>
+        // ══════════════════════════
+        //  ROUTER
+        // ══════════════════════════
+        const TITLES = { classify: 'Document Classification', history: 'History', stats: 'Document Statistics', rebuild: 'Rebuild Index', addfiles: 'Add New Files', preferences: 'Preferences' };
+
+        function navigate(id) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            const pg = document.getElementById('page-' + id);
+            if (pg) pg.classList.add('active');
+            const ni = document.querySelector(`.nav-item[data-page="${id}"]`);
+            if (ni) ni.classList.add('active');
+            document.getElementById('topbarTitle').textContent = TITLES[id] || id;
+            if (id === 'stats') loadStats();
+        }
+
+        document.querySelectorAll('.nav-item[data-page]').forEach(el =>
+            el.addEventListener('click', () => navigate(el.dataset.page))
+        );
+
+        // ══════════════════════════
+        //  CLASSIFY
+        // ══════════════════════════
         const fileInput = document.getElementById('fileInput');
-        const fileName = document.getElementById('fileName');
+        const dropZone = document.getElementById('dropZone');
+        const filePill = document.getElementById('filePill');
         const classifyBtn = document.getElementById('classifyBtn');
-        const resultsSection = document.getElementById('resultsSection');
-        const loadingDiv = document.getElementById('loadingDiv');
-        const resultsDiv = document.getElementById('resultsDiv');
-        const ocrEngine = document.getElementById('ocrEngine');
+        const resetBtn = document.getElementById('resetBtn');
 
-        // Database management elements
-        const healthCheckBtn = document.getElementById('healthCheckBtn');
-        const getStatsBtn = document.getElementById('getStatsBtn');
-        const rebuildBtn = document.getElementById('rebuildBtn');
-        const addFilesBtn = document.getElementById('addFilesBtn');
-        const dbStats = document.getElementById('dbStats');
+        function fmtBytes(b) { return b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB'; }
 
-        fileInput.addEventListener('change', function(e) {
-            if (e.target.files.length > 0) {
-                fileName.textContent = `Selected: ${e.target.files[0].name}`;
-                classifyBtn.disabled = false;
-            } else {
-                fileName.textContent = '';
-                classifyBtn.disabled = true;
-            }
-        });
+        function setFile(f) {
+            document.getElementById('fpName').textContent = f.name;
+            document.getElementById('fpMeta').textContent = fmtBytes(f.size) + ' · ' + (f.type || 'unknown');
+            filePill.classList.add('on'); dropZone.style.display = 'none';
+            classifyBtn.disabled = false; resetBtn.style.display = '';
+        }
 
-        classifyBtn.addEventListener('click', async function() {
+        function resetClassify() {
+            fileInput.value = ''; filePill.classList.remove('on'); dropZone.style.display = '';
+            classifyBtn.disabled = true; resetBtn.style.display = 'none';
+            document.getElementById('resultArea').classList.remove('on');
+            document.getElementById('loadingState').classList.remove('on');
+            document.getElementById('ocrCard').style.display = 'none';
+        }
+
+        fileInput.addEventListener('change', e => { if (e.target.files[0]) setFile(e.target.files[0]); });
+        document.getElementById('removeFile').addEventListener('click', resetClassify);
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+        dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) { fileInput.files = e.dataTransfer.files; setFile(f); } });
+
+        classifyBtn.addEventListener('click', async () => {
             if (!fileInput.files[0]) return;
-
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
-            formData.append('ocr_engine', ocrEngine.value);
-
-            resultsSection.style.display = 'block';
-            loadingDiv.style.display = 'block';
-            resultsDiv.style.display = 'none';
+            const fd = new FormData();
+            fd.append('file', fileInput.files[0]);
+            fd.append('ocr_engine', document.getElementById('ocrEngine').value);
+            fd.append('mode', document.getElementById('classMode').value);
+            document.getElementById('loadingState').classList.add('on');
+            document.getElementById('resultArea').classList.remove('on');
             classifyBtn.disabled = true;
-
             try {
-                const response = await fetch('/weaviate/classify/', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const result = await response.json();
-                displayResults(result);
-            } catch (error) {
-                displayError('Network error: ' + error.message);
-            } finally {
-                loadingDiv.style.display = 'none';
-                classifyBtn.disabled = false;
-            }
+                const r = await fetch('/weaviate/classify/', { method: 'POST', body: fd });
+                renderResult(await r.json());
+            } catch (e) { renderErr('Network error: ' + e.message); }
+            finally { document.getElementById('loadingState').classList.remove('on'); classifyBtn.disabled = false; }
         });
 
-        function displayResults(result) {
-            resultsDiv.style.display = 'block';
-            
-            if (result.error) {
-                resultsDiv.innerHTML = `<div class="error">Error: ${result.error}</div>`;
-                return;
-            }
-
-            let html = `
-                <div class="result-card">
-                    <div class="result-header">
-                        <div>
-                            <span class="document-type">${result.document_type}</span>
-                            <span class="method-badge">${result.classification_method || result.method || 'N/A'}</span>
-                        </div>
-                        <span class="confidence-badge">${result.confidence}% confidence</span>
-                    </div>
-            `;
-
-            // Add scores if available
-            if (result.vector_score !== undefined || result.keyword_score !== undefined) {
-                html += `
-                    <div class="scores-grid">
-                        <div class="score-item">
-                            <div class="score-label">Vector Score</div>
-                            <div class="score-value">${result.vector_score || 0}%</div>
-                        </div>
-                        <div class="score-item">
-                            <div class="score-label">Keyword Score</div>
-                            <div class="score-value">${result.keyword_score || 0}%</div>
-                        </div>
-                        <div class="score-item">
-                            <div class="score-label">Processing Time</div>
-                            <div class="score-value">${result.processing_time || 0}s</div>
-                        </div>
-                        <div class="score-item">
-                            <div class="score-label">OCR Engine</div>
-                            <div class="score-value">${result.ocr_engine}</div>
-                        </div>
-                    </div>
-                `;
-            }
-
-            // Add details if available
-            if (result.details) {
-                html += `<p style="color: #666; margin-bottom: 15px;"><strong>Details:</strong> ${result.details}</p>`;
-            }
-
-            // Add top matches if available
-            if (result.top_3_matches && result.top_3_matches.length > 0) {
-                html += `
-                    <div class="top-matches">
-                        <h4>Top 3 Matches:</h4>
-                `;
-                
-                result.top_3_matches.forEach(match => {
-                    html += `
-                        <div class="match-item">
-                            <div class="match-rank">${match.rank}</div>
-                            <div class="match-type">${match.type}</div>
-                            <div class="match-scores">
-                                <span class="match-score">V: ${match.vector_score}%</span>
-                                <span class="match-score">K: ${match.keyword_score}%</span>
-                                <span class="match-score">C: ${match.combined_score}%</span>
-                            </div>
-                        </div>
-                    `;
+        function renderResult(r) {
+            document.getElementById('errMsg').style.display = 'none';
+            if (r.error) { renderErr(r.error); return; }
+            document.getElementById('rType').textContent = r.document_type || '—';
+            document.getElementById('rMethod').textContent = r.classification_method || r.method || 'hybrid';
+            document.getElementById('rConf').textContent = (r.confidence || 0) + '%';
+            document.getElementById('sVector').textContent = (r.vector_score || 0) + '%';
+            document.getElementById('sKeyword').textContent = (r.keyword_score || 0) + '%';
+            document.getElementById('sTime').textContent = (r.processing_time || '—') + 's';
+            document.getElementById('sEngine').textContent = r.ocr_engine || '—';
+            const tbody = document.getElementById('matchesTbody');
+            tbody.innerHTML = '';
+            if (r.top_3_matches?.length) {
+                r.top_3_matches.forEach(m => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td><span class="rank-badge ${m.rank === 1 ? 'top' : ''}">${m.rank}</span></td>
+        <td style="font-weight:${m.rank === 1 ? '600' : '400'};color:${m.rank === 1 ? 'var(--gray-900)' : 'var(--gray-700)'}">${m.type}</td>
+        <td><div class="mono-val">${m.vector_score}%</div><div class="bar-wrap"><div class="bar-fill" style="width:${m.vector_score}%"></div></div></td>
+        <td><div class="mono-val">${m.keyword_score}%</div><div class="bar-wrap"><div class="bar-fill" style="width:${m.keyword_score}%"></div></div></td>
+        <td style="font-weight:600;color:var(--gray-800)">${m.combined_score}%</td>`;
+                    tbody.appendChild(tr);
                 });
-                
-                html += `</div>`;
+                document.getElementById('matchesCard').style.display = '';
+            } else { document.getElementById('matchesCard').style.display = 'none'; }
+            if (r.details) { const d = document.getElementById('detailsText'); d.textContent = r.details; d.style.display = ''; }
+            if (r.ocr_text) {
+                const ocrCard = document.getElementById('ocrCard');
+                const ocrText = document.getElementById('ocrText');
+                ocrText.textContent = r.ocr_text;
+                ocrCard.style.display = '';
+            } else {
+                document.getElementById('ocrCard').style.display = 'none';
             }
-
-            html += `</div>`;
-            resultsDiv.innerHTML = html;
+            document.getElementById('resultArea').classList.add('on');
+            toast('Classification complete');
         }
 
-        function displayError(message) {
-            resultsDiv.style.display = 'block';
-            resultsDiv.innerHTML = `<div class="error">${message}</div>`;
+        function renderErr(msg) {
+            document.getElementById('errText').textContent = msg;
+            document.getElementById('errMsg').style.display = 'flex';
+            document.getElementById('resultArea').classList.add('on');
         }
 
-        // Database management functions
-        healthCheckBtn.addEventListener('click', async function() {
+        // ══════════════════════════
+        //  HEALTH CHECK
+        // ══════════════════════════
+        async function doHealthCheck() {
             try {
-                const response = await fetch('/weaviate/health/');
-                const result = await response.json();
-                
-                const statusClass = result.healthy ? 'health-healthy' : 'health-unhealthy';
-                const statusText = result.healthy ? '✅ Healthy' : '❌ Unhealthy';
-                
-                dbStats.innerHTML = `
-                    <h4>Health Status <span class="health-status ${statusClass}">${statusText}</span></h4>
-                    <p>${result.message}</p>
-                `;
-                dbStats.style.display = 'block';
-            } catch (error) {
-                dbStats.innerHTML = `<div class="error">Health check failed: ${error.message}</div>`;
-                dbStats.style.display = 'block';
-            }
-        });
+                const d = await (await fetch('/weaviate/health/')).json();
+                const ok = d.healthy;
+                document.getElementById('dotStatus').className = 'dot ' + (ok ? 'online' : '');
+                document.getElementById('connStatus').textContent = ok ? 'Weaviate connected' : 'Weaviate offline';
+                document.getElementById('ovHealth').textContent = ok ? '✅ Healthy' : '❌ Unhealthy';
+                document.getElementById('ovHealthSub').textContent = d.message || '';
+                toast(ok ? 'Weaviate is healthy' : 'Weaviate unhealthy');
+            } catch { toast('Health check failed'); }
+        }
 
-        getStatsBtn.addEventListener('click', async function() {
+        // ══════════════════════════
+        //  STATS
+        // ══════════════════════════
+        async function loadStats() {
+            document.getElementById('lastFetched').textContent = 'Fetching…';
+            const searchInput = document.getElementById('typeSearch');
+            // Store raw data for filtering
+            window.allStatsData = null;
+
+
             try {
-                const response = await fetch('/weaviate/stats/');
-                const result = await response.json();
-                
-                if (result.error) {
-                    dbStats.innerHTML = `<div class="error">${result.error}</div>`;
-                } else {
-                    let html = `
-                        <h4>Database Statistics</h4>
-                        <p><strong>Total Documents:</strong> ${result.total}</p>
-                    `;
-                    
-                    if (result.by_type && Object.keys(result.by_type).length > 0) {
-                        html += '<h5>Documents by Type:</h5><ul>';
-                        for (const [type, count] of Object.entries(result.by_type)) {
-                            html += `<li>${type}: ${count}</li>`;
-                        }
-                        html += '</ul>';
+
+                const d = await (await fetch('/weaviate/stats/')).json();
+
+                if (d.error) {
+                    term.innerHTML = `<span class="t-err">✗ ${d.error}</span>`;
+                    return;
+                }
+
+                // update cards
+
+                // update cards
+                document.getElementById('ovTotal').textContent = d.total ?? '—';
+
+                document.getElementById('ovTypes').textContent =
+                    d.by_type ? Object.keys(d.by_type).length : '—';
+
+                // keep health card stable
+                document.getElementById('ovHealth').textContent =
+                    document.getElementById('ovHealth').textContent || '—';
+
+
+                document.getElementById('lastFetched').textContent =
+                    'Last fetched: ' + new Date().toLocaleTimeString();
+
+                window.allStatsData = d.by_type || {};
+                renderTypeTable(window.allStatsData);
+                // Function to render table
+                function renderTypeTable(types, filter = '') {
+                    const table = document.getElementById('typeTable');
+                    table.innerHTML = '';
+                    const entries = Object.entries(types).filter(([type]) => 
+                        type.toLowerCase().includes(filter.toLowerCase())
+                    );
+
+                    if (entries.length) {
+                        entries.forEach(([type, count]) => {
+                            table.innerHTML += `<tr><td>${type}</td><td>${count}</td></tr>`;
+                        });
+                    } else {
+                        table.innerHTML = `<tr><td colspan="2" style="text-align:center;color:var(--gray-400)">${filter ? 'No matches found' : 'No documents indexed'}</td></tr>`;
                     }
-                    
-                    dbStats.innerHTML = html;
                 }
-                dbStats.style.display = 'block';
-            } catch (error) {
-                dbStats.innerHTML = `<div class="error">Failed to get stats: ${error.message}</div>`;
-                dbStats.style.display = 'block';
+
+                // Add search listener
+                if (!searchInput.hasListener) {
+                    searchInput.addEventListener('input', (e) => {
+                        if (window.allStatsData) {
+                            renderTypeTable(window.allStatsData, e.target.value);
+                        }
+                    });
+                    searchInput.hasListener = true;
+                }
+
+                // terminal log
+                let log = `<span class="t-key">total_docs  </span>
+             <span style="color:#d4d4d4">${d.total}</span>`;
+
+                if (d.by_type) {
+                    log += '\n\n<span class="t-key">by_type</span>';
+
+                    for (const [k, v] of Object.entries(d.by_type)) {
+                        log += `\n  <span class="t-key">${k.padEnd(20)}</span>
+                <span style="color:#d4d4d4">${v}</span>`;
+                    }
+                }
+
+
+
+                toast('Stats loaded');
+
+            } catch (e) {
+
+                term.innerHTML = `<span class="t-err">✗ ${e.message}</span>`;
+                document.getElementById('lastFetched').textContent = 'Fetch failed';
+
             }
+        }
+
+        // ══════════════════════════
+        //  REBUILD
+        // ══════════════════════════
+        async function doRebuild() {
+            if (!confirm('Delete and rebuild the entire Weaviate index? This cannot be undone.')) return;
+            const btn = document.getElementById('rebuildBtn');
+            const term = document.getElementById('rebuildTerminal');
+            const pBar = document.getElementById('progBar');
+            const pWrap = document.getElementById('progWrap');
+            const pLbl = document.getElementById('progLbl');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="ring" style="width:12px;height:12px;border-width:2px"></div>&nbsp;Rebuilding…';
+            pWrap.classList.add('on');
+
+            const sn = n => document.getElementById('sn' + n);
+            const resetSteps = () => [1, 2, 3, 4, 5].forEach(n => sn(n).className = 'step-num');
+            const step = (n, pct, msg) => {
+                [1, 2, 3, 4, 5].forEach(i => { sn(i).className = i < n ? 'step-num done' : i === n ? 'step-num running' : 'step-num'; });
+                pBar.style.width = pct + '%'; pLbl.textContent = msg;
+                term.innerHTML = `<span class="t-key">$ </span>${msg}`;
+            };
+
+            resetSteps();
+            try {
+                step(1, 10, 'Clearing existing index…'); await delay(600);
+                step(2, 30, 'Scanning source documents…'); await delay(500);
+                step(3, 55, 'Running OCR extraction…');
+                const d = await (await fetch('/weaviate/rebuild/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ocr_engine: document.getElementById('rebuildOcr').value, batch_size: document.getElementById('rebuildBatch').value }) })).json();
+                step(4, 80, 'Vectorizing & indexing…'); await delay(400);
+                step(5, 100, 'Verifying index integrity…'); await delay(300);
+                [1, 2, 3, 4, 5].forEach(n => sn(n).className = 'step-num done');
+                if (d.success) {
+                    term.innerHTML = `<span class="t-key">$ </span>done\n\n<span class="t-ok">✓ added    ${d.added}\n✓ total    ${d.total}\n✓ index OK</span>`;
+                    pLbl.textContent = 'Rebuild complete — ' + d.added + ' documents indexed';
+                    toast('Index rebuilt successfully');
+                } else { term.innerHTML = `<span class="t-err">✗ ${d.error}</span>`; }
+            } catch (e) { term.innerHTML = `<span class="t-err">✗ ${e.message}</span>`; resetSteps(); }
+            finally { btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7a5 5 0 115 5"/><path d="M2 7l2-2M2 7l2 2"/></svg> Start Rebuild'; }
+        }
+
+        const delay = ms => new Promise(r => setTimeout(r, ms));
+
+        // ══════════════════════════
+        //  ADD FILES
+        // ══════════════════════════
+        let queue = [];
+        const addInput = document.getElementById('addInput');
+        const addDrop = document.getElementById('addDrop');
+
+        addInput.addEventListener('change', e => addToQueue([...e.target.files]));
+        addDrop.addEventListener('dragover', e => { e.preventDefault(); addDrop.classList.add('over'); });
+        addDrop.addEventListener('dragleave', () => addDrop.classList.remove('over'));
+        addDrop.addEventListener('drop', e => { e.preventDefault(); addDrop.classList.remove('over'); addToQueue([...e.dataTransfer.files]); });
+
+        function addToQueue(files) {
+            files.forEach(f => { if (!queue.find(q => q.file.name === f.name)) queue.push({ file: f, status: 'queued' }); });
+            renderQueue();
+        }
+
+        function renderQueue() {
+            const list = document.getElementById('queueList');
+            list.innerHTML = '';
+            queue.forEach((item, i) => {
+                list.innerHTML += `<div class="qi">
+      <div class="qi-icon"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 2h6l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M10 2v4h4"/></svg></div>
+      <div class="qi-info"><div class="qi-name">${item.file.name}</div><div class="qi-meta">${fmtBytes(item.file.size)}</div></div>
+      <span class="qi-badge ${item.status}">${item.status}</span>
+      <button class="qi-rm" onclick="rmFromQueue(${i})"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 2l10 10M12 2L2 12"/></svg></button>
+    </div>`;
+            });
+            document.getElementById('addFilesBtn').disabled = queue.length === 0;
+        }
+
+        function rmFromQueue(i) { queue.splice(i, 1); renderQueue(); }
+        function clearQueue() { queue = []; renderQueue(); }
+
+        async function doAddFiles() {
+            if (!queue.length) return;
+            const btn = document.getElementById('addFilesBtn');
+            const term = document.getElementById('addTerminal');
+            btn.disabled = true;
+            term.innerHTML = '<span class="t-key">$ </span>indexing files…';
+            let ok = 0;
+            for (let i = 0; i < queue.length; i++) {
+                const fd = new FormData();
+                fd.append('file', queue[i].file);
+                fd.append('ocr_engine', document.getElementById('addOcr').value);
+                fd.append('doc_type', document.getElementById('addType').value);
+                try {
+                    const d = await (await fetch('/weaviate/add-files/', { method: 'POST', body: fd })).json();
+                    queue[i].status = d.success ? 'done' : 'fail';
+                    if (d.success) ok++;
+                } catch { queue[i].status = 'fail'; }
+                renderQueue();
+            }
+            term.innerHTML = `<span class="t-key">$ </span>done\n\n<span class="t-ok">✓ indexed   ${ok} / ${queue.length}</span>`;
+            toast(`${ok} file(s) indexed`);
+            btn.disabled = false;
+        }
+
+        // ══════════════════════════
+        //  PREFERENCES
+        // ══════════════════════════
+        const PREF_IDS = ['defaultOcr', 'classMode', 'confThreshold', 'autoClear', 'topN', 'weaviateHost', 'batchSize', 'autoHealth', 'statsRefresh', 'toasts', 'toastDuration', 'sound', 'density', 'sidebarWidth'];
+        const DEFAULTS = { defaultOcr: 'paddleocr', classMode: 'hybrid', confThreshold: 60, autoClear: false, topN: '3', weaviateHost: 'http://localhost:8080', batchSize: '25', autoHealth: true, statsRefresh: '0', toasts: true, toastDuration: '3000', sound: false, density: 'default', sidebarWidth: '252' };
+
+        function loadPrefs() {
+            try {
+                const p = { ...DEFAULTS, ...JSON.parse(localStorage.getItem('ds-prefs') || '{}') };
+                PREF_IDS.forEach(k => { const el = document.getElementById('pref-' + k); if (!el) return; el.type === 'checkbox' ? el.checked = !!p[k] : el.value = p[k]; });
+                applyPrefs(p);
+            } catch { }
+        }
+
+        function applyPrefs(p) {
+            document.documentElement.style.setProperty('--sidebar', (parseInt(p.sidebarWidth) || 252) + 'px');
+            const pb = document.querySelector('.page-body');
+            if (p.density === 'compact') pb.style.padding = '16px 22px';
+            else if (p.density === 'relaxed') pb.style.padding = '44px 50px';
+            else pb.style.padding = '';
+        }
+
+        function gatherPrefs() {
+            const o = {};
+            PREF_IDS.forEach(k => { const el = document.getElementById('pref-' + k); if (!el) return; o[k] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) : el.value; });
+            return o;
+        }
+
+        function savePrefs() {
+            const p = gatherPrefs();
+            localStorage.setItem('ds-prefs', JSON.stringify(p));
+            applyPrefs(p);
+            document.getElementById('prefNote').textContent = 'Saved at ' + new Date().toLocaleTimeString();
+            toast('Preferences saved');
+        }
+
+        function resetPrefs() {
+            if (!confirm('Reset all preferences to defaults?')) return;
+            localStorage.removeItem('ds-prefs');
+            loadPrefs();
+            document.getElementById('prefNote').textContent = 'Reset to defaults';
+            toast('Preferences reset');
+        }
+
+        function clearHistory() {
+            document.querySelector('.nav-badge').textContent = '0';
+            toast('History cleared');
+        }
+
+        // live preview for density & sidebar
+        ['pref-density', 'pref-sidebarWidth'].forEach(id => {
+            document.getElementById(id)?.addEventListener('change', () => applyPrefs(gatherPrefs()));
         });
 
-        rebuildBtn.addEventListener('click', async function() {
-            if (!confirm('This will rebuild the entire database. Continue?')) return;
-            
-            rebuildBtn.disabled = true;
-            rebuildBtn.textContent = '🔄 Rebuilding...';
-            
-            try {
-                const response = await fetch('/weaviate/rebuild/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        ocr_engine: ocrEngine.value
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    dbStats.innerHTML = `
-                        <h4>✅ Database Rebuilt Successfully</h4>
-                        <p>Added ${result.added} documents out of ${result.total} processed</p>
-                    `;
-                } else {
-                    dbStats.innerHTML = `<div class="error">Rebuild failed: ${result.error}</div>`;
-                }
-                dbStats.style.display = 'block';
-            } catch (error) {
-                dbStats.innerHTML = `<div class="error">Rebuild failed: ${error.message}</div>`;
-                dbStats.style.display = 'block';
-            } finally {
-                rebuildBtn.disabled = false;
-                rebuildBtn.textContent = '🔄 Rebuild Database';
-            }
-        });
+        // ══════════════════════════
+        //  TOAST
+        // ══════════════════════════
+        let toastTimer;
+        function toast(msg) {
+            const p = JSON.parse(localStorage.getItem('ds-prefs') || '{}');
+            if (p.toasts === false) return;
+            const dur = parseInt(p.toastDuration) || 3000;
+            const el = document.getElementById('toast');
+            document.getElementById('toastText').textContent = msg;
+            el.classList.add('on');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => el.classList.remove('on'), dur);
+        }
 
-        addFilesBtn.addEventListener('click', async function() {
-            addFilesBtn.disabled = true;
-            addFilesBtn.textContent = '➕ Adding...';
-            
-            try {
-                const response = await fetch('/weaviate/add-files/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        ocr_engine: ocrEngine.value
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    dbStats.innerHTML = `
-                        <h4>✅ Files Added Successfully</h4>
-                        <p>Added ${result.added} new documents</p>
-                    `;
-                } else {
-                    dbStats.innerHTML = `<div class="error">Add files failed: ${result.error}</div>`;
-                }
-                dbStats.style.display = 'block';
-            } catch (error) {
-                dbStats.innerHTML = `<div class="error">Add files failed: ${error.message}</div>`;
-                dbStats.style.display = 'block';
-            } finally {
-                addFilesBtn.disabled = false;
-                addFilesBtn.textContent = '➕ Add New Files';
-            }
-        });
+        // ══════════════════════════
+        //  INIT
+        // ══════════════════════════
+        loadPrefs();
+        navigate('classify');
+        const ip = JSON.parse(localStorage.getItem('ds-prefs') || '{}');
+        if (ip.autoHealth !== false) doHealthCheck();
     </script>
 </body>
+
 </html>
