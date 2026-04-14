@@ -198,6 +198,8 @@ def _process_single_file(file_path, rapid_ocr, hybrid_classifier, original_filen
         }
 
 
+
+
 @csrf_exempt
 def classify_document(request):
     """Classify a single document using Weaviate + hybrid approach (RapidOCR only)"""
