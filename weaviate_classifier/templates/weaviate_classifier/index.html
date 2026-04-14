@@ -1431,14 +1431,22 @@
                         </div>
                         <div class="card-body">
                             <div class="drop-zone" id="dropZone">
-                                <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.pdf">
+                                <input type="file" id="fileInput" accept=".jpg,.jpeg,.png,.pdf,.zip" multiple>
                                 <div class="di"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor"
                                         stroke-width="1.5">
                                         <path d="M10 13V4M6 8l4-4 4 4" />
                                         <path d="M3 16h14" />
                                     </svg></div>
-                                <div class="dt">Drop your document here</div>
-                                <div class="ds">or click to browse — JPG, PNG, PDF</div>
+                                <div class="dt">Drop documents, folders or ZIP here</div>
+                                <div class="ds">Supports multiple files, folder upload, and ZIP archives</div>
+                                <div style="margin-top: 12px; display: flex; justify-content: center; gap: 8px;">
+                                    <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); document.getElementById('fileInput').webkitdirectory = true; document.getElementById('fileInput').click();" style="position: relative; z-index: 10;">
+                                        Select Folder
+                                    </button>
+                                    <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); document.getElementById('fileInput').webkitdirectory = false; document.getElementById('fileInput').click();" style="position: relative; z-index: 10;">
+                                        Select Files / ZIP
+                                    </button>
+                                </div>
                             </div>
                             <div class="file-pill" id="filePill">
                                 <div class="fpi"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
@@ -1472,8 +1480,13 @@
                                         <circle cx="7" cy="7" r="5.5" />
                                         <path d="M4.5 7l2 2 3-3" />
                                     </svg>
-                                    Classify Document
+                                    Classify <span id="classifyCount"></span>
                                 </button>
+                            </div>
+                            <!-- Batch Progress List -->
+                            <div id="batchList" style="margin-top: 20px; display: none;">
+                                <div style="font-size: 11px; font-weight: 600; color: var(--gray-500); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Batch Processing</div>
+                                <div id="batchItems" style="display: flex; flex-direction: column; gap: 6px; max-height: 200px; overflow-y: auto; padding-right: 4px;"></div>
                             </div>
                             <div class="loading-state" id="loadingState">
                                 <div class="ring"></div>
@@ -2048,70 +2061,198 @@
         const filePill = document.getElementById('filePill');
         const classifyBtn = document.getElementById('classifyBtn');
         const resetBtn = document.getElementById('resetBtn');
+        const batchList = document.getElementById('batchList');
+        const batchItems = document.getElementById('batchItems');
+        let selectedFiles = [];
 
         function fmtBytes(b) { return b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(1) + ' MB'; }
 
-        function setFile(f) {
-            document.getElementById('fpName').textContent = f.name;
-            document.getElementById('fpMeta').textContent = fmtBytes(f.size) + ' · ' + (f.type || 'unknown');
-            filePill.classList.add('on'); dropZone.style.display = 'none';
-            classifyBtn.disabled = false; resetBtn.style.display = '';
+        function updateFileUI() {
+            if (selectedFiles.length === 0) {
+                resetClassify();
+                return;
+            }
+
+            if (selectedFiles.length === 1) {
+                const f = selectedFiles[0];
+                document.getElementById('fpName').textContent = f.name;
+                document.getElementById('fpMeta').textContent = fmtBytes(f.size) + ' · ' + (f.type || 'unknown');
+                filePill.classList.add('on');
+                batchList.style.display = 'none';
+                document.getElementById('classifyCount').textContent = 'Document';
+            } else {
+                filePill.classList.remove('on');
+                batchList.style.display = 'block';
+                batchItems.innerHTML = '';
+                selectedFiles.forEach((f, i) => {
+                    const item = document.createElement('div');
+                    item.style = "display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--white); border: 1px solid var(--gray-100); border-radius: var(--rmd); font-size: 12px;";
+                    item.innerHTML = `<div style="width: 16px; height: 16px; background: var(--gray-100); border-radius: 2px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="width: 10px; height: 10px;"><path d="M4 2h6l4 4v8a1 1 0 01-1 1H4a1 1 0 01-1-1V3a1 1 0 011-1z"/><path d="M10 2v4h4"/></svg></div>
+                                      <div style="flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--gray-700);">${f.name}</div>
+                                      <div style="color: var(--gray-400); font-size: 10px;">${fmtBytes(f.size)}</div>`;
+                    batchItems.appendChild(item);
+                });
+                document.getElementById('classifyCount').textContent = `${selectedFiles.length} Items`;
+            }
+
+            dropZone.style.display = 'none';
+            classifyBtn.disabled = false;
+            resetBtn.style.display = '';
         }
 
         function resetClassify() {
-            fileInput.value = ''; filePill.classList.remove('on'); dropZone.style.display = '';
-            classifyBtn.disabled = true; resetBtn.style.display = 'none';
+            fileInput.value = '';
+            selectedFiles = [];
+            filePill.classList.remove('on');
+            batchList.style.display = 'none';
+            dropZone.style.display = '';
+            classifyBtn.disabled = true;
+            resetBtn.style.display = 'none';
             document.getElementById('resultArea').classList.remove('on');
             document.getElementById('loadingState').classList.remove('on');
             document.getElementById('ocrCard').style.display = 'none';
+            document.getElementById('classifyCount').textContent = '';
         }
 
-        fileInput.addEventListener('change', e => { if (e.target.files[0]) setFile(e.target.files[0]); });
+        fileInput.addEventListener('change', e => {
+            if (e.target.files.length > 0) {
+                selectedFiles = Array.from(e.target.files);
+                updateFileUI();
+            }
+        });
+
         document.getElementById('removeFile').addEventListener('click', resetClassify);
         dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
         dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
-        dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) { fileInput.files = e.dataTransfer.files; setFile(f); } });
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.classList.remove('over');
+            if (e.dataTransfer.files.length > 0) {
+                selectedFiles = Array.from(e.dataTransfer.files);
+                updateFileUI();
+            }
+        });
 
         classifyBtn.addEventListener('click', async () => {
-            if (!fileInput.files[0]) return;
+            if (selectedFiles.length === 0) return;
+            
             const fd = new FormData();
-            fd.append('file', fileInput.files[0]);
+            selectedFiles.forEach(f => fd.append('files', f));
             fd.append('mode', document.getElementById('classMode').value);
+            
             document.getElementById('loadingState').classList.add('on');
             document.getElementById('resultArea').classList.remove('on');
             classifyBtn.disabled = true;
+            
             try {
-                const r = await fetch('/weaviate/classify/', { method: 'POST', body: fd });
-                renderResult(await r.json());
-            } catch (e) { renderErr('Network error: ' + e.message); }
-            finally { document.getElementById('loadingState').classList.remove('on'); classifyBtn.disabled = false; }
+                const url = selectedFiles.length === 1 && !selectedFiles[0].name.toLowerCase().endsWith('.zip') 
+                    ? '/classify/' 
+                    : '/classify-batch/';
+                
+                // If single file but using batch API for zip, adjust formData field if needed or use batch API for everything
+                const response = await fetch('/classify-batch/', { method: 'POST', body: fd });
+                const data = await response.json();
+                
+                if (data.results && data.results.length > 1) {
+                    renderBatchResults(data);
+                } else if (data.results && data.results.length === 1) {
+                    renderResult(data.results[0]);
+                } else {
+                    renderResult(data);
+                }
+            } catch (e) {
+                renderErr('Network error: ' + e.message);
+            } finally {
+                document.getElementById('loadingState').classList.remove('on');
+                classifyBtn.disabled = false;
+            }
         });
+
+        function renderBatchResults(data) {
+            document.getElementById('errMsg').style.display = 'none';
+            const tbody = document.getElementById('matchesTbody');
+            tbody.innerHTML = '';
+            
+            // Create a summary table in the result area
+            document.getElementById('rType').textContent = `Batch Result (${data.total_processed} items)`;
+            document.getElementById('rMethod').textContent = 'batch';
+            document.getElementById('rConf').textContent = '—';
+            document.getElementById('sVector').textContent = '—';
+            document.getElementById('sKeyword').textContent = '—';
+            document.getElementById('sEngine').textContent = 'Multi';
+            
+            // Setup table for batch results
+            const matchesCard = document.getElementById('matchesCard');
+            matchesCard.querySelector('.card-title').innerHTML = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 3h12M3 7h8M5 11h4" /></svg>Classification Summary';
+            
+            const thead = matchesCard.querySelector('thead tr');
+            thead.innerHTML = '<th style="width:32px">#</th><th>Filename</th><th>Doc Type</th><th>Confidence</th><th>Action</th>';
+            
+            data.results.forEach((r, i) => {
+                const tr = document.createElement('tr');
+                const conf = r.confidence !== undefined ? r.confidence + '%' : (r.error ? 'Error' : '—');
+                const type = r.document_type || 'Unknown';
+                
+                tr.innerHTML = `<td><span class="rank-badge">${i + 1}</span></td>
+                                <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${r.filename}</td>
+                                <td style="font-weight: 600;">${type}</td>
+                                <td><div class="mono-val">${conf}</div></td>
+                                <td><button class="btn btn-ghost btn-sm" onclick='viewResultDetails(${JSON.stringify(r).replace(/'/g, "&apos;")})'>Details</button></td>`;
+                tbody.appendChild(tr);
+            });
+            
+            document.getElementById('matchesCard').style.display = '';
+            document.getElementById('ocrCard').style.display = 'none';
+            document.getElementById('resultArea').classList.add('on');
+            toast(`Processed ${data.total_processed} files`);
+        }
+
+        // Global function to detail button works
+        window.viewResultDetails = function(r) {
+            renderResult(r);
+            // Scroll to the results card
+            document.getElementById('resultArea').scrollIntoView({ behavior: 'smooth' });
+        };
 
         function renderResult(r) {
             document.getElementById('errMsg').style.display = 'none';
-            if (r.error) { renderErr(r.error); return; }
+            if (r.error && !r.document_type) { renderErr(r.error); return; }
+            
             document.getElementById('rType').textContent = r.document_type || '—';
             document.getElementById('rMethod').textContent = r.classification_method || r.method || 'hybrid';
-            document.getElementById('rConf').textContent = (r.confidence || 0) + '%';
+            document.getElementById('rConf').textContent = (r.confidence !== undefined ? r.confidence : 0) + '%';
             document.getElementById('sVector').textContent = (r.vector_score || 0) + '%';
             document.getElementById('sKeyword').textContent = (r.keyword_score || 0) + '%';
             document.getElementById('sTime').textContent = (r.processing_time || '—') + 's';
             document.getElementById('sEngine').textContent = r.ocr_engine || '—';
+            
+            const matchesCard = document.getElementById('matchesCard');
             const tbody = document.getElementById('matchesTbody');
+            
+            // Restore single result headers if they were changed by batch
+            matchesCard.querySelector('.card-title').innerHTML = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 3h12M3 7h8M5 11h4" /></svg>Top Matches';
+            const thead = matchesCard.querySelector('thead tr');
+            thead.innerHTML = '<th style="width:32px">#</th><th>Type</th><th>Vector</th><th>Keyword</th><th>Combined</th>';
+            
             tbody.innerHTML = '';
             if (r.top_3_matches?.length) {
                 r.top_3_matches.forEach(m => {
                     const tr = document.createElement('tr');
                     tr.innerHTML = `<td><span class="rank-badge ${m.rank === 1 ? 'top' : ''}">${m.rank}</span></td>
-        <td style="font-weight:${m.rank === 1 ? '600' : '400'};color:${m.rank === 1 ? 'var(--gray-900)' : 'var(--gray-700)'}">${m.type}</td>
-        <td><div class="mono-val">${m.vector_score}%</div><div class="bar-wrap"><div class="bar-fill" style="width:${m.vector_score}%"></div></div></td>
-        <td><div class="mono-val">${m.keyword_score}%</div><div class="bar-wrap"><div class="bar-fill" style="width:${m.keyword_score}%"></div></div></td>
-        <td style="font-weight:600;color:var(--gray-800)">${m.combined_score}%</td>`;
+                        <td style="font-weight:${m.rank === 1 ? '600' : '400'};color:${m.rank === 1 ? 'var(--gray-900)' : 'var(--gray-700)'}">${m.type}</td>
+                        <td><div class="mono-val">${m.vector_score}%</div><div class="bar-wrap"><div class="bar-fill" style="width:${m.vector_score}%"></div></div></td>
+                        <td><div class="mono-val">${m.keyword_score}%</div><div class="bar-wrap"><div class="bar-fill" style="width:${m.keyword_score}%"></div></div></td>
+                        <td style="font-weight:600;color:var(--gray-800)">${m.combined_score}%</td>`;
                     tbody.appendChild(tr);
                 });
-                document.getElementById('matchesCard').style.display = '';
-            } else { document.getElementById('matchesCard').style.display = 'none'; }
+                matchesCard.style.display = '';
+            } else {
+                matchesCard.style.display = 'none';
+            }
+            
             if (r.details) { const d = document.getElementById('detailsText'); d.textContent = r.details; d.style.display = ''; }
+            else { document.getElementById('detailsText').style.display = 'none'; }
+            
             if (r.ocr_text) {
                 const ocrCard = document.getElementById('ocrCard');
                 const ocrText = document.getElementById('ocrText');
@@ -2120,6 +2261,7 @@
             } else {
                 document.getElementById('ocrCard').style.display = 'none';
             }
+            
             document.getElementById('resultArea').classList.add('on');
             toast('Classification complete');
         }
@@ -2135,7 +2277,7 @@
         // ══════════════════════════
         async function doHealthCheck() {
             try {
-                const d = await (await fetch('/weaviate/health/')).json();
+                const d = await (await fetch('/health/')).json();
                 const ok = d.healthy;
                 document.getElementById('dotStatus').className = 'dot ' + (ok ? 'online' : '');
                 document.getElementById('connStatus').textContent = ok ? 'Weaviate connected' : 'Weaviate offline';
@@ -2157,7 +2299,7 @@
 
             try {
 
-                const d = await (await fetch('/weaviate/stats/')).json();
+                const d = await (await fetch('/stats/')).json();
 
                 if (d.error) {
                     term.innerHTML = `<span class="t-err">✗ ${d.error}</span>`;
@@ -2261,7 +2403,7 @@
                 step(1, 10, 'Clearing existing index…'); await delay(600);
                 step(2, 30, 'Scanning source documents…'); await delay(500);
                 step(3, 55, 'Running OCR extraction…');
-                const d = await (await fetch('/weaviate/rebuild/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch_size: document.getElementById('rebuildBatch').value }) })).json();
+                const d = await (await fetch('/rebuild/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch_size: document.getElementById('rebuildBatch').value }) })).json();
                 step(4, 80, 'Vectorizing & indexing…'); await delay(400);
                 step(5, 100, 'Verifying index integrity…'); await delay(300);
                 [1, 2, 3, 4, 5].forEach(n => sn(n).className = 'step-num done');
@@ -2322,7 +2464,7 @@
                 fd.append('file', queue[i].file);
                 fd.append('doc_type', document.getElementById('addType').value);
                 try {
-                    const d = await (await fetch('/weaviate/add-files/', { method: 'POST', body: fd })).json();
+                    const d = await (await fetch('/add-files/', { method: 'POST', body: fd })).json();
                     queue[i].status = d.success ? 'done' : 'fail';
                     if (d.success) ok++;
                 } catch { queue[i].status = 'fail'; }

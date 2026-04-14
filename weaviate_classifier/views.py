@@ -109,30 +109,14 @@ def index(request):
     return render(request, 'weaviate_classifier/index.html')
 
 
-@csrf_exempt
-def classify_document(request):
-    """Classify a single document using Weaviate + hybrid approach (RapidOCR only)"""
-    if request.method != 'POST':
-        return JsonResponse({'error': 'POST required'}, status=400)
-    if 'file' not in request.FILES:
-        return JsonResponse({'error': 'No file uploaded'}, status=400)
+def _process_single_file(file_path, rapid_ocr, hybrid_classifier, original_filename=None):
+    """Internal helper to process a single file and return result dict"""
+    start_time = time.time()
+    results = {"filename": original_filename or os.path.basename(file_path)}
     
-    file = request.FILES['file']
-    ext = file.name.split('.')[-1].lower()
-    temp_path = f"temp_upload.{ext}"
-    
-    results = {}
     try:
-        # Save uploaded file
-        with open(temp_path, 'wb+') as f:
-            for chunk in file.chunks():
-                f.write(chunk)
-        
-        rapid_ocr, hybrid_classifier = get_resources()
-        start_time = time.time()
-        
         # Extract text using RapidOCR
-        extracted_text = extract_text_rapidocr(temp_path, rapid_ocr)
+        extracted_text = extract_text_rapidocr(file_path, rapid_ocr)
         engine_name = "RapidOCR"
         
         processing_time = time.time() - start_time
@@ -142,7 +126,7 @@ def classify_document(request):
             try:
                 classification_result = hybrid_classifier.classify(extracted_text)
                 
-                results = {
+                results.update({
                     "ocr_engine": engine_name,
                     "document_type": classification_result["document_type"],
                     "confidence": classification_result["confidence"],
@@ -153,23 +137,23 @@ def classify_document(request):
                     "ocr_text": extracted_text[:2000],
                     "processing_time": round(processing_time, 2),
                     "top_3_matches": classification_result.get("top_3_matches", [])
-                }
+                })
             except Exception as e:
-                results = {
+                results.update({
                     "ocr_engine": engine_name,
                     "document_type": "unknown",
                     "confidence": 0.0,
                     "ocr_text": extracted_text[:2000],
                     "reason": f"classification_error: {str(e)}",
                     "processing_time": round(processing_time, 2)
-                }
+                })
         else:
             # Fallback to Gemini if OCR fails
             try:
                 from classifier.gemini_classifier import classify_with_gemini
-                gemini_result = classify_with_gemini(temp_path)
+                gemini_result = classify_with_gemini(file_path)
                 if "error" not in gemini_result:
-                    results = {
+                    results.update({
                         "ocr_engine": f"{engine_name} + Gemini (fallback)",
                         "document_type": gemini_result.get("doc_type", "unknown"),
                         "category": gemini_result.get("category", ""),
@@ -179,32 +163,137 @@ def classify_document(request):
                         "processing_time": round(processing_time, 2),
                         "gemini_used": True,
                         "reason": "OCR failed (or text too short), classified using Gemini Vision"
-                    }
+                    })
                 else:
-                    results = {
+                    results.update({
                         "ocr_engine": engine_name,
                         "document_type": "unknown",
                         "confidence": 0.0,
                         "reason": f"ocr_failed and gemini_error: {gemini_result.get('error', 'Unknown')}",
                         "processing_time": round(processing_time, 2)
-                    }
+                    })
             except Exception as e:
-                results = {
+                results.update({
                     "ocr_engine": engine_name,
                     "document_type": "unknown",
                     "confidence": 0.0,
                     "reason": f"ocr_failed: {extracted_text[:100]}, gemini_error: {str(e)}",
                     "processing_time": round(processing_time, 2)
-                }
+                })
         
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        return JsonResponse(results)
+        # Apply 50% confidence threshold check
+        confidence = results.get("confidence")
+        if isinstance(confidence, (int, float)) and confidence < 50:
+            results["document_type"] = "Un-classified"
+        elif isinstance(confidence, str) and confidence.replace('.', '', 1).isdigit():
+            if float(confidence) < 50:
+                results["document_type"] = "Un-classified"
+                
+        return results
     except Exception as e:
+        return {
+            "filename": original_filename or os.path.basename(file_path),
+            "error": str(e),
+            "document_type": "error"
+        }
+
+
+@csrf_exempt
+def classify_document(request):
+    """Classify a single document using Weaviate + hybrid approach (RapidOCR only)"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+    if 'file' not in request.FILES:
+        return JsonResponse({'error': 'No file uploaded'}, status=400)
+    
+    file = request.FILES['file']
+    ext = file.name.split('.')[-1].lower()
+    
+    # Use temporary file to avoid filename collisions
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as tmp:
+        for chunk in file.chunks():
+            tmp.write(chunk)
+        temp_path = tmp.name
+    
+    try:
+        rapid_ocr, hybrid_classifier = get_resources()
+        results = _process_single_file(temp_path, rapid_ocr, hybrid_classifier, file.name)
+        return JsonResponse(results)
+    finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
-        import traceback
-        return JsonResponse({'error': f'Server error: {str(e)}', 'traceback': traceback.format_exc()[:500]}, status=500)
+
+
+@csrf_exempt
+def classify_batch(request):
+    """Handle multiple files, folders, and ZIP archives for classification"""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+    
+    files = request.FILES.getlist('files')
+    if not files:
+        # Fallback to single 'file' field if 'files' is empty
+        if 'file' in request.FILES:
+            files = [request.FILES['file']]
+        else:
+            return JsonResponse({'error': 'No files uploaded'}, status=400)
+    
+    rapid_ocr, hybrid_classifier = get_resources()
+    all_results = []
+    supported_exts = {'.pdf', '.jpg', '.jpeg', '.png'}
+    
+    temp_dir = tempfile.mkdtemp()
+    try:
+        for f in files:
+            ext = os.path.splitext(f.name)[1].lower()
+            
+            if ext == '.zip':
+                # Handle ZIP archive
+                zip_path = os.path.join(temp_dir, f.name)
+                with open(zip_path, 'wb+') as tmp_zip:
+                    for chunk in f.chunks():
+                        tmp_zip.write(chunk)
+                
+                extract_path = os.path.join(temp_dir, f"ext_{f.name}")
+                os.makedirs(extract_path, exist_ok=True)
+                
+                try:
+                    with zipfile.ZipFile(zip_path, 'r') as z:
+                        z.extractall(extract_path)
+                    
+                    # Walk and process all supported files in ZIP
+                    for root, _, filenames in os.walk(extract_path):
+                        for name in filenames:
+                            if os.path.splitext(name)[1].lower() in supported_exts:
+                                full_p = os.path.join(root, name)
+                                rel_p = os.path.relpath(full_p, extract_path)
+                                res = _process_single_file(full_p, rapid_ocr, hybrid_classifier, rel_p)
+                                all_results.append(res)
+                except Exception as e:
+                    all_results.append({"filename": f.name, "error": f"ZIP error: {str(e)}", "document_type": "error"})
+                
+            elif ext in supported_exts:
+                # Handle individual file or folder file
+                # Save to temp location
+                safe_name = "".join([c if c.isalnum() or c in "._-" else "_" for c in f.name])
+                item_path = os.path.join(temp_dir, safe_name)
+                with open(item_path, 'wb+') as tmp_item:
+                    for chunk in f.chunks():
+                        tmp_item.write(chunk)
+                
+                res = _process_single_file(item_path, rapid_ocr, hybrid_classifier, f.name)
+                all_results.append(res)
+            else:
+                all_results.append({"filename": f.name, "error": "Unsupported file type", "document_type": "unsupported"})
+                
+        return JsonResponse({
+            "success": True,
+            "total_processed": len(all_results),
+            "results": all_results
+        })
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
 
 
 @csrf_exempt

@@ -3,8 +3,8 @@ from django.conf import settings
 from django.conf.urls.static import static
 
 urlpatterns = [
-    path('', include('classifier.urls')),
-    path('weaviate/', include('weaviate_classifier.urls')),
+    path('', include('weaviate_classifier.urls')),
+    path('old/', include('classifier.urls')),
 ]
 
 if settings.DEBUG:
