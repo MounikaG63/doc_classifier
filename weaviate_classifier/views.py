@@ -332,4 +332,3 @@ def health_check(request):
             'healthy': False,
             'message': f'Health check failed: {str(e)}'
         }, status=500)
-  }, status=500)
