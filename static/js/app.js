@@ -131,11 +131,8 @@ async function classifyZipFile(file) {
         <p style="font-size: 0.9em; color: #666;">📦 ${file.name}</p>
     `;
     
-    const ocrEngine = document.querySelector('input[name="classify_ocr_engine"]:checked').value;
-    
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('ocr_engine', ocrEngine);
     
     try {
         const response = await fetch('/classify-zip/', {
@@ -159,7 +156,7 @@ async function classifyZipFile(file) {
             result: r
         }));
         
-        displayMultipleResults(allResults, ocrEngine);
+        displayMultipleResults(allResults, 'RapidOCR');
         
     } catch (error) {
         loading.style.display = 'none';
@@ -182,12 +179,8 @@ async function classifyDocument(file) {
         <p>Processing document...</p>
     `;
     
-    // Get selected OCR engine
-    const ocrEngine = document.querySelector('input[name="classify_ocr_engine"]:checked').value;
-    
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('ocr_engine', ocrEngine);
     
     try {
         const response = await fetch('/classify/', {
@@ -219,9 +212,6 @@ async function classifyMultipleDocuments(files) {
     loading.style.display = 'block';
     resultsContent.style.display = 'none';
     
-    const ocrEngineRadio = document.querySelector('input[name="classify_ocr_engine"]:checked');
-    const ocrEngine = ocrEngineRadio ? ocrEngineRadio.value : 'tesseract';
-    console.log('Selected OCR engine:', ocrEngine);
     const allResults = [];
     
     for (let i = 0; i < files.length; i++) {
@@ -238,7 +228,6 @@ async function classifyMultipleDocuments(files) {
         
         const formData = new FormData();
         formData.append('file', file);
-        formData.append('ocr_engine', ocrEngine);
         
         try {
             console.log(`[${i+1}/${files.length}] Classifying:`, file.name);
@@ -256,7 +245,7 @@ async function classifyMultipleDocuments(files) {
             
             // Ensure result has required fields
             if (!result.ocr_engine) {
-                result.ocr_engine = ocrEngine;
+                result.ocr_engine = 'RapidOCR';
             }
             
             console.log(`[${i+1}/${files.length}] Adding to results:`, {filename: file.name, result: result});
@@ -272,7 +261,7 @@ async function classifyMultipleDocuments(files) {
                 result: {
                     document_type: 'unknown',
                     reason: `Error: ${error.message}`,
-                    ocr_engine: ocrEngine
+                    ocr_engine: 'RapidOCR'
                 }
             });
         }
@@ -288,7 +277,7 @@ async function classifyMultipleDocuments(files) {
     loading.style.display = 'none';
     resultsContent.style.display = 'block';
     
-    displayMultipleResults(allResults, ocrEngine);
+    displayMultipleResults(allResults, 'RapidOCR');
 }
 
 function displayMultipleResults(allResults, ocrEngine) {
@@ -523,89 +512,10 @@ function formatOcrResult(result) {
 
 
 
-function displayWinner(results) {
-    const winnerDiv = document.getElementById('winner-content');
-    
-    const easy = results.easyocr;
-    const paddle = results.paddleocr;
-    
-    let easyScore = 0;
-    let paddleScore = 0;
-    let criteria = [];
-    
-    // Similarity score (50 points)
-    const easySim = easy.similarity_score || 0;
-    const paddleSim = paddle.similarity_score || 0;
-    
-    if (easySim > paddleSim) {
-        easyScore += 50;
-        criteria.push(`✅ EasyOCR: Higher similarity (${easySim}% vs ${paddleSim}%)`);
-    } else if (paddleSim > easySim) {
-        paddleScore += 50;
-        criteria.push(`✅ PaddleOCR: Higher similarity (${paddleSim}% vs ${easySim}%)`);
-    } else {
-        criteria.push(`🤝 Similarity tied at ${easySim}%`);
-    }
-    
-    // Document type (30 points)
-    if (easy.document_type !== 'unknown' && paddle.document_type === 'unknown') {
-        easyScore += 30;
-        criteria.push(`✅ EasyOCR: Identified document type (${easy.document_type})`);
-    } else if (paddle.document_type !== 'unknown' && easy.document_type === 'unknown') {
-        paddleScore += 30;
-        criteria.push(`✅ PaddleOCR: Identified document type (${paddle.document_type})`);
-    } else if (easy.document_type === paddle.document_type && easy.document_type !== 'unknown') {
-        criteria.push(`🤝 Both identified as: ${easy.document_type}`);
-    }
-    
-    // Text length (10 points)
-    const easyLen = easy.text_length || 0;
-    const paddleLen = paddle.text_length || 0;
-    
-    if (easyLen > paddleLen * 1.1) {
-        easyScore += 10;
-        criteria.push(`✅ EasyOCR: Extracted more text (${easyLen} vs ${paddleLen} chars)`);
-    } else if (paddleLen > easyLen * 1.1) {
-        paddleScore += 10;
-        criteria.push(`✅ PaddleOCR: Extracted more text (${paddleLen} vs ${easyLen} chars)`);
-    }
-    
-    // Speed (10 points)
-    const easyTime = easy.processing_time || 0;
-    const paddleTime = paddle.processing_time || 0;
-    
-    if (easyTime < paddleTime * 0.9) {
-        easyScore += 10;
-        criteria.push(`⚡ EasyOCR: Faster processing (${easyTime}s vs ${paddleTime}s)`);
-    } else if (paddleTime < easyTime * 0.9) {
-        paddleScore += 10;
-        criteria.push(`⚡ PaddleOCR: Faster processing (${paddleTime}s vs ${easyTime}s)`);
-    }
-    
-    // Display criteria
-    let html = '<div class="criteria-list">';
-    criteria.forEach(c => {
-        html += `<div class="criteria-item">${c}</div>`;
-    });
-    html += '</div>';
-    
-    // Display winner
-    html += '<div style="margin-top: 30px; text-align: center;">';
-    if (easyScore > paddleScore) {
-        html += `<div class="winner-badge">🏆 Winner: EasyOCR (${easyScore} vs ${paddleScore})</div>`;
-    } else if (paddleScore > easyScore) {
-        html += `<div class="winner-badge">🏆 Winner: PaddleOCR (${paddleScore} vs ${easyScore})</div>`;
-    } else {
-        html += `<div class="winner-badge">🤝 Tie! (Both scored ${easyScore})</div>`;
-    }
-    html += '</div>';
-    
-    winnerDiv.innerHTML = html;
-}
+
 
 async function rebuildDatabase() {
     const btn = document.getElementById('rebuild-btn');
-    const ocrEngine = document.querySelector('input[name="db_ocr_engine"]:checked').value;
     
     btn.disabled = true;
     btn.textContent = '⏳ Rebuilding...';
@@ -614,13 +524,13 @@ async function rebuildDatabase() {
         const response = await fetch('/rebuild-db/', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ocr_engine: ocrEngine})
+            body: JSON.stringify({})
         });
         
         const data = await response.json();
         
         if (data.success) {
-            alert(`✅ Database rebuilt with ${ocrEngine.toUpperCase()}!\n${data.added}/${data.total} documents indexed.`);
+            alert(`✅ Database rebuilt with RapidOCR!\n${data.added}/${data.total} documents indexed.`);
             loadDbStats();
         }
     } catch (error) {
@@ -633,7 +543,6 @@ async function rebuildDatabase() {
 
 async function addNewFiles() {
     const btn = document.getElementById('add-files-btn');
-    const ocrEngine = document.querySelector('input[name="db_ocr_engine"]:checked').value;
     
     btn.disabled = true;
     btn.textContent = '⏳ Adding...';
@@ -642,7 +551,7 @@ async function addNewFiles() {
         const response = await fetch('/add-files/', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ocr_engine: ocrEngine})
+            body: JSON.stringify({})
         });
         
         const data = await response.json();
@@ -651,7 +560,7 @@ async function addNewFiles() {
             if (data.added === 0) {
                 alert('ℹ️ No new files found.');
             } else {
-                alert(`✨ Added ${data.added} new documents with ${ocrEngine.toUpperCase()}.`);
+                alert(`✨ Added ${data.added} new documents with RapidOCR.`);
                 loadDbStats();
             }
         }

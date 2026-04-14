@@ -1456,15 +1456,6 @@
                                     </svg></button>
                             </div>
                             <div class="controls-row">
-                                <div class="field"><label>OCR Engine</label>
-                                    <select id="ocrEngine">
-                                        <option value="tesseract">Tesseract — Fast</option>
-                                        <option value="easyocr">EasyOCR — Balanced</option>
-                                        <option value="paddleocr" selected>PaddleOCR — Accurate</option>
-                                        <option value="rapidocr">RapidOCR — Ultra Fast</option>
-                                        <option value="surya">Surya — Advanced</option>
-                                    </select>
-                                </div>
                                 <div class="field"><label>Classification Mode</label>
                                     <select id="classMode">
                                         <option value="hybrid" selected>Hybrid (Vector + Keyword)</option>
@@ -1691,15 +1682,6 @@
                         </div>
                         <div class="card-body">
                             <div class="controls-row">
-                                <div class="field"><label>OCR Engine</label>
-                                    <select id="rebuildOcr">
-                                        <option value="tesseract">Tesseract — Fast</option>
-                                        <option value="easyocr">EasyOCR — Balanced</option>
-                                        <option value="paddleocr" selected>PaddleOCR — Accurate</option>
-                                        <option value="rapidocr">RapidOCR — Ultra Fast</option>
-                                        <option value="surya">Surya — Advanced</option>
-                                    </select>
-                                </div>
                                 <div class="field"><label>Batch Size</label>
                                     <select id="rebuildBatch">
                                         <option value="10">10 docs / batch</option>
@@ -1802,15 +1784,6 @@
                             </div>
                             <div class="queue-list" id="queueList"></div>
                             <div class="controls-row">
-                                <div class="field"><label>OCR Engine</label>
-                                    <select id="addOcr">
-                                        <option value="tesseract">Tesseract — Fast</option>
-                                        <option value="easyocr">EasyOCR — Balanced</option>
-                                        <option value="paddleocr" selected>PaddleOCR — Accurate</option>
-                                        <option value="rapidocr">RapidOCR — Ultra Fast</option>
-                                        <option value="surya">Surya — Advanced</option>
-                                    </select>
-                                </div>
                                 <div class="field"><label>Document Type Label</label>
                                     <select id="addType">
                                         <option value="">Auto-detect</option>
@@ -1849,19 +1822,7 @@
 
                             <div class="pref-section">
                                 <div class="pref-section-title">Classification Defaults</div>
-                                <div class="pref-row">
-                                    <div>
-                                        <div class="pref-name">Default OCR Engine</div>
-                                        <div class="pref-desc">Pre-selected engine on the Classify page</div>
-                                    </div>
-                                    <div class="pref-ctrl"><select id="pref-defaultOcr">
-                                            <option value="tesseract">Tesseract — Fast</option>
-                                            <option value="easyocr">EasyOCR — Balanced</option>
-                                            <option value="paddleocr" selected>PaddleOCR — Accurate</option>
-                                            <option value="rapidocr">RapidOCR — Ultra Fast</option>
-                                            <option value="surya">Surya — Advanced</option>
-                                        </select></div>
-                                </div>
+
                                 <div class="pref-row">
                                     <div>
                                         <div class="pref-name">Default Classification Mode</div>
@@ -2115,7 +2076,6 @@
             if (!fileInput.files[0]) return;
             const fd = new FormData();
             fd.append('file', fileInput.files[0]);
-            fd.append('ocr_engine', document.getElementById('ocrEngine').value);
             fd.append('mode', document.getElementById('classMode').value);
             document.getElementById('loadingState').classList.add('on');
             document.getElementById('resultArea').classList.remove('on');
@@ -2301,7 +2261,7 @@
                 step(1, 10, 'Clearing existing index…'); await delay(600);
                 step(2, 30, 'Scanning source documents…'); await delay(500);
                 step(3, 55, 'Running OCR extraction…');
-                const d = await (await fetch('/weaviate/rebuild/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ocr_engine: document.getElementById('rebuildOcr').value, batch_size: document.getElementById('rebuildBatch').value }) })).json();
+                const d = await (await fetch('/weaviate/rebuild/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ batch_size: document.getElementById('rebuildBatch').value }) })).json();
                 step(4, 80, 'Vectorizing & indexing…'); await delay(400);
                 step(5, 100, 'Verifying index integrity…'); await delay(300);
                 [1, 2, 3, 4, 5].forEach(n => sn(n).className = 'step-num done');
@@ -2360,7 +2320,6 @@
             for (let i = 0; i < queue.length; i++) {
                 const fd = new FormData();
                 fd.append('file', queue[i].file);
-                fd.append('ocr_engine', document.getElementById('addOcr').value);
                 fd.append('doc_type', document.getElementById('addType').value);
                 try {
                     const d = await (await fetch('/weaviate/add-files/', { method: 'POST', body: fd })).json();
@@ -2377,8 +2336,8 @@
         // ══════════════════════════
         //  PREFERENCES
         // ══════════════════════════
-        const PREF_IDS = ['defaultOcr', 'classMode', 'confThreshold', 'autoClear', 'topN', 'weaviateHost', 'batchSize', 'autoHealth', 'statsRefresh', 'toasts', 'toastDuration', 'sound', 'density', 'sidebarWidth'];
-        const DEFAULTS = { defaultOcr: 'paddleocr', classMode: 'hybrid', confThreshold: 60, autoClear: false, topN: '3', weaviateHost: 'http://localhost:8080', batchSize: '25', autoHealth: true, statsRefresh: '0', toasts: true, toastDuration: '3000', sound: false, density: 'default', sidebarWidth: '252' };
+        const PREF_IDS = ['classMode', 'confThreshold', 'autoClear', 'topN', 'weaviateHost', 'batchSize', 'autoHealth', 'statsRefresh', 'toasts', 'toastDuration', 'sound', 'density', 'sidebarWidth'];
+        const DEFAULTS = { classMode: 'hybrid', confThreshold: 60, autoClear: false, topN: '3', weaviateHost: 'http://localhost:8080', batchSize: '25', autoHealth: true, statsRefresh: '0', toasts: true, toastDuration: '3000', sound: false, density: 'default', sidebarWidth: '252' };
 
         function loadPrefs() {
             try {

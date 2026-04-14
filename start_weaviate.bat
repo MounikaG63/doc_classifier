@@ -1,6 +1,7 @@
 @echo off
 echo Starting Weaviate with persistence...
 
+
 REM Create data directory if it doesn't exist
 if not exist "weaviate_data" mkdir weaviate_data
 

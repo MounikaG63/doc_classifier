@@ -10,40 +10,13 @@
     <div class="container">
         <header>
             <h1> OCR Document Classifier</h1>
-            <p>Classify documents using Tesseract, EasyOCR, PaddleOCR, RapidOCR, or Surya</p>
+            <p>Classify documents using RapidOCR for maximum speed and accuracy</p>
         </header>
                                                         
         <div class="sidebar">
             <h2> Database Settings</h2>
             
-            <div class="ocr-choice">
-                <label>OCR Engine for Database:</label>
-                <div class="radio-group">
-                    <label>
-                        <input type="radio" name="db_ocr_engine" value="easyocr">
-                        EasyOCR
-                    </label>
-                    <label>
-                        <input type="radio" name="db_ocr_engine" value="paddleocr" checked>
-                        PaddleOCR
-                    </label>
-                    <label>
-                        <input type="radio" name="db_ocr_engine" value="tesseract">
-                        Tesseract
-                    </label>
-                    <label>
-                        <input type="radio" name="db_ocr_engine" value="surya">
-                        Surya
-                    </label>
-                    <label>
-                        <input type="radio" name="db_ocr_engine" value="rapidocr">
-                        RapidOCR
-                    </label>
-                </div>
-                <small style="color: #666; display: block; margin-top: 5px;">
-                    Used when building/updating database
-                </small>
-            </div>
+
 
             <div id="db-stats" style="background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                 <p>Loading stats...</p>
@@ -59,34 +32,7 @@
             <section class="upload-section">
                 <h2> Upload Document for Classification</h2>
                 
-                <div class="ocr-choice" style="margin-bottom: 20px;">
-                    <label>OCR Engine for Classification:</label>
-                    <div class="radio-group">
-                        <label>
-                            <input type="radio" name="classify_ocr_engine" value="tesseract" checked>
-                            Tesseract (Fast)
-                        </label>
-                        <label>
-                            <input type="radio" name="classify_ocr_engine" value="easyocr">
-                            EasyOCR
-                        </label>
-                        <label>
-                            <input type="radio" name="classify_ocr_engine" value="paddleocr">
-                            PaddleOCR (Accurate)
-                        </label>
-                        <label>
-                            <input type="radio" name="classify_ocr_engine" value="surya">
-                            Surya (ML-based)
-                        </label>
-                        <label>
-                            <input type="radio" name="classify_ocr_engine" value="rapidocr">
-                            RapidOCR (Fast)
-                        </label>
-                    </div>
-                    <small style="color: #666; display: block; margin-top: 5px;">
-                        Used when classifying uploaded documents
-                    </small>
-                </div>
+
                 
                 <div class="upload-area" id="upload-area">
                     <input type="file" id="file-input" accept=".jpg,.jpeg,.png,.pdf,.zip" multiple hidden>

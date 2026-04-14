@@ -9,40 +9,22 @@ import tempfile
 import shutil
 from PIL import Image
 import fitz
-import easyocr
-from paddleocr import PaddleOCR
 from rapidocr_onnxruntime import RapidOCR
 
 import threading
 from .weaviate_client import get_weaviate_store
 from .hybrid_classifier import WeaviateHybridClassifier
 
-# Global OCR instances
-easy_ocr = None
-paddle_ocr = None
-surya_ocr = None
+# Global OCR instance
 rapid_ocr = None
 hybrid_classifier = None
 resource_lock = threading.Lock()
-paddle_lock = threading.Lock()
 
 
 def get_resources():
-    """Initialize OCR engines and hybrid classifier"""
-    global easy_ocr, paddle_ocr, surya_ocr, rapid_ocr, hybrid_classifier
+    """Initialize RapidOCR engine and hybrid classifier"""
+    global rapid_ocr, hybrid_classifier
     with resource_lock:
-        if easy_ocr is None:
-            easy_ocr = easyocr.Reader(["en"], gpu=False)
-        
-        if paddle_ocr is None:
-            try:
-                print("Attempting to initialize PaddleOCR...")
-                paddle_ocr = PaddleOCR(use_angle_cls=True, lang='en')
-                print("✓ PaddleOCR initialized successfully")
-            except Exception as e:
-                print(f"✗ Failed to initialize PaddleOCR: {e}")
-                paddle_ocr = None
-        
         if rapid_ocr is None:
             try:
                 print("Attempting to initialize RapidOCR...")
@@ -51,22 +33,6 @@ def get_resources():
             except Exception as e:
                 print(f"✗ Failed to initialize RapidOCR: {e}")
                 rapid_ocr = None
-    
-    if surya_ocr is None:
-        try:
-            print("Attempting to initialize Surya OCR...")
-            from surya.recognition import RecognitionPredictor
-            from surya.detection import DetectionPredictor
-            detection = DetectionPredictor()
-            recognition = RecognitionPredictor()
-            surya_ocr = {
-                'recognition': recognition,
-                'detection': detection
-            }
-            print("✓ Surya OCR initialized successfully")
-        except Exception as e:
-            print(f"✗ Failed to initialize Surya OCR: {e}")
-            surya_ocr = None
     
     if hybrid_classifier is None:
         try:
@@ -77,7 +43,7 @@ def get_resources():
             print(f"✗ Failed to initialize Hybrid Classifier: {e}")
             hybrid_classifier = None
     
-    return easy_ocr, paddle_ocr, surya_ocr, rapid_ocr, hybrid_classifier
+    return rapid_ocr, hybrid_classifier
 
 
 def extract_text_from_pdf_direct(path):
@@ -103,150 +69,6 @@ def pdf_to_images(pdf_path):
         pix.save(out_path)
         image_paths.append(out_path)
     return image_paths
-
-
-def preprocess_image(path):
-    """Preprocess image for better OCR results"""
-    try:
-        img = Image.open(path).convert("RGB")
-        max_size = 2000
-        if img.width > max_size or img.height > max_size:
-            ratio = min(max_size / img.width, max_size / img.height)
-            new_size = (int(img.width * ratio), int(img.height * ratio))
-            img = img.resize(new_size, Image.Resampling.LANCZOS)
-            img.save(path)
-    except:
-        pass
-
-
-def extract_text_paddleocr(path, paddle_ocr):
-    """Extract text using PaddleOCR"""
-    try:
-        ext = os.path.splitext(path)[1].lower()
-        if ext not in [".jpg", ".jpeg", ".png", ".bmp", ".pdf"]:
-            return f"ERROR: Unsupported file type for PaddleOCR: {ext}"
-        if ext == ".pdf":
-            direct_text = extract_text_from_pdf_direct(path)
-            if direct_text and len(direct_text) > 50:
-                return direct_text
-        
-        with paddle_lock:
-            result = paddle_ocr.predict(path)
-        if not result:
-            return "ERROR: PaddleOCR returned empty result"
-        
-        all_texts = []
-        for page_result in result:
-            if hasattr(page_result, 'rec_texts'):
-                all_texts.extend(page_result.rec_texts)
-            elif isinstance(page_result, dict) and 'rec_texts' in page_result:
-                all_texts.extend(page_result['rec_texts'])
-        
-        return " ".join(all_texts) if all_texts else "ERROR: No text extracted"
-    except Exception as e:
-        return f"ERROR: {str(e)}"
-
-
-def extract_text_tesseract(path):
-    """Extract text using Tesseract"""
-    try:
-        import pytesseract
-        if path.lower().endswith(".pdf"):
-            direct_text = extract_text_from_pdf_direct(path)
-            if direct_text and len(direct_text) > 50:
-                return direct_text
-            
-            pages = pdf_to_images(path)
-            full_text = ""
-            for img in pages:
-                try:
-                    image = Image.open(img)
-                    full_text += " " + pytesseract.image_to_string(image)
-                except Exception as e:
-                    full_text += f" [Error: {str(e)}]"
-                os.remove(img)
-            return full_text.strip() if full_text.strip() else "ERROR: No text extracted from PDF"
-        
-        image = Image.open(path)
-        text = pytesseract.image_to_string(image)
-        return text.strip() if text.strip() else "ERROR: No text found in image"
-    except Exception as e:
-        return f"ERROR: {str(e)}"
-
-
-def extract_text_easyocr(path, easy_ocr):
-    """Extract text using EasyOCR"""
-    if path.lower().endswith(".pdf"):
-        direct_text = extract_text_from_pdf_direct(path)
-        if direct_text and len(direct_text) > 50:
-            return direct_text
-        
-        pages = pdf_to_images(path)
-        full_text = ""
-        for img in pages:
-            preprocess_image(img)
-            raw = easy_ocr.readtext(img, detail=0)
-            full_text += " " + " ".join(raw)
-            os.remove(img)
-        return full_text.strip()
-    
-    try:
-        preprocess_image(path)
-        raw = easy_ocr.readtext(path, detail=0)
-        return " ".join(raw)
-    except Exception as e:
-        return f"ERROR: {str(e)}"
-
-
-def extract_text_surya(path, surya_ocr):
-    """Extract text using Surya OCR"""
-    try:
-        if surya_ocr is None:
-            return "ERROR: Surya OCR not initialized"
-        
-        from PIL import Image as PILImage
-        if path.lower().endswith(".pdf"):
-            direct_text = extract_text_from_pdf_direct(path)
-            if direct_text and len(direct_text) > 50:
-                return direct_text
-            
-            pages = pdf_to_images(path)
-            full_text = ""
-            for img_path in pages:
-                try:
-                    img = PILImage.open(img_path).convert("RGB")
-                    rec_results = surya_ocr['recognition'](
-                        [img],
-                        det_predictor=surya_ocr['detection']
-                    )
-                    for page_result in rec_results:
-                        if hasattr(page_result, 'text_lines'):
-                            for line in page_result.text_lines:
-                                full_text += " " + line.text
-                        elif hasattr(page_result, 'text'):
-                            full_text += " " + page_result.text
-                except Exception as e:
-                    full_text += f" [Error: {str(e)}]"
-                os.remove(img_path)
-            return full_text.strip() if full_text.strip() else "ERROR: No text extracted from PDF"
-        
-        img = PILImage.open(path).convert("RGB")
-        rec_results = surya_ocr['recognition'](
-            [img],
-            det_predictor=surya_ocr['detection']
-        )
-        full_text = ""
-        for page_result in rec_results:
-            if hasattr(page_result, 'text_lines'):
-                for line in page_result.text_lines:
-                    full_text += " " + line.text
-            elif hasattr(page_result, 'text'):
-                full_text += " " + page_result.text
-        
-        return full_text.strip() if full_text.strip() else "ERROR: No text found in image"
-    except Exception as e:
-        import traceback
-        return f"ERROR: {str(e)} | {traceback.format_exc()[:200]}"
 
 
 def extract_text_rapidocr(path, rapid_ocr):
@@ -289,13 +111,12 @@ def index(request):
 
 @csrf_exempt
 def classify_document(request):
-    """Classify a single document using Weaviate + hybrid approach"""
+    """Classify a single document using Weaviate + hybrid approach (RapidOCR only)"""
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=400)
     if 'file' not in request.FILES:
         return JsonResponse({'error': 'No file uploaded'}, status=400)
     
-    ocr_engine = request.POST.get('ocr_engine', 'tesseract').lower()
     file = request.FILES['file']
     ext = file.name.split('.')[-1].lower()
     temp_path = f"temp_upload.{ext}"
@@ -307,29 +128,12 @@ def classify_document(request):
             for chunk in file.chunks():
                 f.write(chunk)
         
-        easy_ocr, paddle_ocr, surya_ocr, rapid_ocr, hybrid_classifier = get_resources()
+        rapid_ocr, hybrid_classifier = get_resources()
         start_time = time.time()
         
-        # Extract text using selected OCR engine
-        if ocr_engine == 'tesseract':
-            extracted_text = extract_text_tesseract(temp_path)
-            engine_name = "Tesseract"
-        elif ocr_engine == 'easyocr':
-            extracted_text = extract_text_easyocr(temp_path, easy_ocr)
-            engine_name = "EasyOCR"
-        elif ocr_engine == 'paddleocr':
-            extracted_text = extract_text_paddleocr(temp_path, paddle_ocr)
-            engine_name = "PaddleOCR"
-        elif ocr_engine == 'surya':
-            extracted_text = extract_text_surya(temp_path, surya_ocr)
-            engine_name = "Surya"
-        elif ocr_engine == 'rapidocr':
-            extracted_text = extract_text_rapidocr(temp_path, rapid_ocr)
-            engine_name = "RapidOCR"
-        else:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            return JsonResponse({'error': 'Invalid OCR engine'}, status=400)
+        # Extract text using RapidOCR
+        extracted_text = extract_text_rapidocr(temp_path, rapid_ocr)
+        engine_name = "RapidOCR"
         
         processing_time = time.time() - start_time
         
@@ -374,7 +178,7 @@ def classify_document(request):
                         "confidence": gemini_result.get("confidence", ""),
                         "processing_time": round(processing_time, 2),
                         "gemini_used": True,
-                        "reason": "OCR failed, classified using Gemini Vision"
+                        "reason": "OCR failed (or text too short), classified using Gemini Vision"
                     }
                 else:
                     results = {
@@ -405,14 +209,11 @@ def classify_document(request):
 
 @csrf_exempt
 def rebuild_database(request):
-    """Rebuild Weaviate database from samples"""
+    """Rebuild Weaviate database from samples using RapidOCR"""
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=400)
     
-    data = json.loads(request.body)
-    ocr_engine = data.get('ocr_engine', 'easyocr')
-    
-    easy_ocr, paddle_ocr, surya_ocr, rapid_ocr, hybrid_classifier = get_resources()
+    rapid_ocr, hybrid_classifier = get_resources()
     
     if not hybrid_classifier:
         return JsonResponse({'error': 'Hybrid classifier not initialized'}, status=500)
@@ -436,17 +237,8 @@ def rebuild_database(request):
             total += 1
             path = os.path.join(folder, f)
             
-            # Extract text using selected OCR engine
-            if ocr_engine == "paddleocr":
-                text = extract_text_paddleocr(path, paddle_ocr)
-            elif ocr_engine == "tesseract":
-                text = extract_text_tesseract(path)
-            elif ocr_engine == "surya":
-                text = extract_text_surya(path, surya_ocr)
-            elif ocr_engine == "rapidocr":
-                text = extract_text_rapidocr(path, rapid_ocr)
-            else:
-                text = extract_text_easyocr(path, easy_ocr)
+            # Extract text using RapidOCR
+            text = extract_text_rapidocr(path, rapid_ocr)
             
             if not text.strip() or text.startswith("ERROR"):
                 continue
@@ -456,7 +248,7 @@ def rebuild_database(request):
                     text=text,
                     label=label,
                     filename=f,
-                    ocr_engine=ocr_engine
+                    ocr_engine="rapidocr"
                 )
                 added += 1
             except Exception as e:
@@ -468,25 +260,14 @@ def rebuild_database(request):
 
 @csrf_exempt
 def add_new_files(request):
-    """Add new files to Weaviate database"""
+    """Add new files to Weaviate database using RapidOCR"""
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=400)
     
-    data = json.loads(request.body)
-    ocr_engine = data.get('ocr_engine', 'easyocr')
-    
-    easy_ocr, paddle_ocr, surya_ocr, rapid_ocr, hybrid_classifier = get_resources()
+    rapid_ocr, hybrid_classifier = get_resources()
     
     if not hybrid_classifier:
         return JsonResponse({'error': 'Hybrid classifier not initialized'}, status=500)
-    
-    # Get existing filenames to avoid duplicates
-    try:
-        stats = hybrid_classifier.weaviate_store.get_stats()
-        # For simplicity, we'll add all files (Weaviate handles duplicates differently)
-        existing_files = set()
-    except:
-        existing_files = set()
     
     added = 0
     samples_path = "samples"
@@ -497,23 +278,10 @@ def add_new_files(request):
             continue
         
         for f in os.listdir(folder):
-            file_key = f"{label}_{f}"
-            if file_key in existing_files:
-                continue
-            
             path = os.path.join(folder, f)
             
-            # Extract text using selected OCR engine
-            if ocr_engine == "paddleocr":
-                text = extract_text_paddleocr(path, paddle_ocr)
-            elif ocr_engine == "tesseract":
-                text = extract_text_tesseract(path)
-            elif ocr_engine == "surya":
-                text = extract_text_surya(path, surya_ocr)
-            elif ocr_engine == "rapidocr":
-                text = extract_text_rapidocr(path, rapid_ocr)
-            else:
-                text = extract_text_easyocr(path, easy_ocr)
+            # Extract text using RapidOCR
+            text = extract_text_rapidocr(path, rapid_ocr)
             
             if not text.strip() or text.startswith("ERROR"):
                 continue
@@ -523,7 +291,7 @@ def add_new_files(request):
                     text=text,
                     label=label,
                     filename=f,
-                    ocr_engine=ocr_engine
+                    ocr_engine="rapidocr"
                 )
                 added += 1
             except Exception as e:
@@ -564,3 +332,4 @@ def health_check(request):
             'healthy': False,
             'message': f'Health check failed: {str(e)}'
         }, status=500)
+  }, status=500)

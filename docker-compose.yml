@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  db:
+    image: semitechnologies/weaviate:1.19.0
+    ports:
+      - "8080:8080"
+    restart: on-failure
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      DEFAULT_VECTORIZER_MODULE: 'none'
+      ENABLE_MODULES: ''
+      CLUSTER_HOSTNAME: 'node1'
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      - WEAVIATE_URL=http://db:8080
+      - DJANGO_SETTINGS_MODULE=ocr_project.settings
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - .:/app
+      - samples_data:/app/samples
+    restart: on-failure
+
+volumes:
+  weaviate_data:
+  samples_data:

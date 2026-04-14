@@ -15,10 +15,6 @@ import django
 django.setup()
 
 from classifier.views import (
-    extract_text_surya,
-    extract_text_paddleocr,
-    extract_text_easyocr,
-    extract_text_tesseract,
     extract_text_rapidocr,
     get_resources,
     DB_PATH,
@@ -26,31 +22,20 @@ from classifier.views import (
 )
 
 def process_single_file(args):
-    """Worker function for multiprocessing"""
-    label, filename, ocr_engine = args
+    """Worker function for multiprocessing (RapidOCR only)"""
+    label, filename = args
     folder = os.path.join(SAMPLES_PATH, label)
     path = os.path.join(folder, filename)
     
     # We need to get resources inside the worker or passed carefully
-    # Re-initializing resources in each process is safest for OCR engines
-    # but we only do it once per process if we use an initializer.
     global _local_resources
     if '_local_resources' not in globals():
         _local_resources = get_resources()
     
-    collection, embedder, easy_ocr, paddle_ocr, surya_ocr, rapid_ocr = _local_resources
+    collection, embedder, rapid_ocr = _local_resources
     
     try:
-        if ocr_engine == "paddleocr":
-            text = extract_text_paddleocr(path, paddle_ocr)
-        elif ocr_engine == "tesseract":
-            text = extract_text_tesseract(path)
-        elif ocr_engine == "surya":
-            text = extract_text_surya(path, surya_ocr)
-        elif ocr_engine == "rapidocr":
-            text = extract_text_rapidocr(path, rapid_ocr)
-        else:
-            text = extract_text_easyocr(path, easy_ocr)
+        text = extract_text_rapidocr(path, rapid_ocr)
             
         if not text.strip() or text.startswith("ERROR"):
             return None
@@ -61,28 +46,21 @@ def process_single_file(args):
         return {
             "id": doc_id,
             "embedding": emb,
-            "metadata": {"label": label, "ocr_engine": ocr_engine},
+            "metadata": {"label": label, "ocr_engine": "rapidocr"},
             "document": text
         }
     except Exception as e:
-        # Use a more visible error message
         import traceback
         error_msg = f"{str(e)}"
         print(f"\n❌ Error processing {filename}: {error_msg}")
         return None
 
 def main():
-    print("🚀 Starting Optimized Incremental Rebuild Script")
+    print("🚀 Starting Optimized Incremental Rebuild Script (RapidOCR only)")
     
     # Set environment variables for better CPU performance with parallel OCR
     os.environ["OMP_NUM_THREADS"] = "1"
     os.environ["MKL_NUM_THREADS"] = "1"
-    
-    ocr_engine = "paddleocr"
-    if len(sys.argv) > 1:
-        ocr_engine = sys.argv[1].lower()
-    
-    print(f"🛠️ Selected OCR Engine: {ocr_engine.upper()}")
     
     # Initialize ChromaDB
     client = chromadb.PersistentClient(path=DB_PATH)
@@ -90,7 +68,6 @@ def main():
     
     # Get existing IDs to enable incremental updates
     print("🔍 Checking existing documents in database...")
-    # Get total count first to know how many IDs to fetch
     total_in_db = collection.count()
     existing_data = collection.get(limit=max(100, total_in_db + 100))
     existing_ids = set(existing_data.get("ids", []))
@@ -108,7 +85,7 @@ def main():
             if doc_id in existing_ids:
                 skipped += 1
                 continue
-            tasks.append((label, f, ocr_engine))
+            tasks.append((label, f))
     
     total_new = len(tasks)
     print(f"📂 Found {total_new} new documents to index. (Skipped {skipped} existing)")
